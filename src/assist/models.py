@@ -94,6 +94,7 @@ class Role(str, Enum):
 class Message(BaseModel):
     role: Role
     content: str
+    actor_id: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

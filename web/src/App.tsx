@@ -410,6 +410,7 @@ export default function App() {
               messages={messages}
               streaming={streaming}
               activeAgent={activeAgent}
+              user={user}
               onSend={sendMessage}
             />
           )}

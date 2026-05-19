@@ -349,7 +349,9 @@ async def run_schedule(schedule_id: str, store: RealmStore) -> dict:
 
 
 @app.post("/api/realms/{realm_id}/sessions/{session_id}/chat")
-async def chat(session_id: str, body: dict, store: RealmStore) -> StreamingResponse:
+async def chat(
+    session_id: str, body: dict, user: User, store: RealmStore
+) -> StreamingResponse:
     prompt = body.get("message", "").strip()
     if not prompt:
         raise HTTPException(400, "message required")
@@ -364,7 +366,7 @@ async def chat(session_id: str, body: dict, store: RealmStore) -> StreamingRespo
 
     ui_prompt = body.get("ui_prompt", "")
 
-    user_msg = Message(role=Role.USER, content=prompt)
+    user_msg = Message(role=Role.USER, content=prompt, actor_id=user["email"])
     store.append_message(session_id, user_msg)
     history = store.get_messages(session_id)
 
@@ -380,7 +382,9 @@ async def chat(session_id: str, body: dict, store: RealmStore) -> StreamingRespo
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         if full_response:
-            agent_msg = Message(role=Role.AGENT, content="".join(full_response))
+            agent_msg = Message(
+                role=Role.AGENT, content="".join(full_response), actor_id=meta.agent_id
+            )
             store.append_message(session_id, agent_msg)
         yield "data: [DONE]\n\n"
 

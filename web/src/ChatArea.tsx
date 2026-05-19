@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Renderer } from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui";
-import type { Agent, Message } from "./api";
+import type { Agent, Message, User } from "./api";
 
 interface ChatAreaProps {
   messages: Message[];
   streaming: boolean;
   activeAgent: Agent | null;
+  user: User;
   onSend: (text: string) => void;
 }
 
@@ -14,6 +15,7 @@ export default function ChatArea({
   messages,
   streaming,
   activeAgent,
+  user,
   onSend,
 }: ChatAreaProps) {
   const [input, setInput] = useState("");
@@ -39,7 +41,24 @@ export default function ChatArea({
           const showSpinner = isLastAgent && streaming && !m.content;
           return (
             <div key={i} className={`message ${m.role}`}>
-              <span className="role-tag">{m.role}</span>
+              <div className="message-header">
+                {m.role === "user" ? (
+                  <img className="message-avatar" src={user.picture} alt="" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="message-avatar agent-avatar" aria-hidden="true">&#x1F916;</span>
+                )}
+                <span className="message-name">
+                  {m.role === "user" ? user.name : (activeAgent?.name ?? "Agent")}
+                </span>
+                {m.timestamp && (
+                  <time className="message-time" dateTime={m.timestamp}>
+                    {new Date(m.timestamp).toLocaleString(undefined, {
+                      month: "short", day: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                  </time>
+                )}
+              </div>
               <div className="content">
                 {showSpinner ? (
                   <span className="spinner" role="status" aria-label="Loading response" />

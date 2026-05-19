@@ -76,6 +76,7 @@ export interface ScheduleCreate {
 export interface Message {
   role: "user" | "agent";
   content: string;
+  actor_id?: string;
   timestamp: string;
 }
 

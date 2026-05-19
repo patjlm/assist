@@ -64,7 +64,10 @@ async def _execute_schedule(store: Store, schedule: ScheduleDefinition) -> None:
             schedule_id=schedule.id,
         )
         store.create_session(meta)
-        store.append_message(meta.id, Message(role=Role.USER, content=expanded_prompt))
+        store.append_message(
+            meta.id,
+            Message(role=Role.USER, content=expanded_prompt, actor_id="scheduler"),
+        )
 
         chunks: list[str] = []
         async for chunk in run_turn(agent_def, [], expanded_prompt):
@@ -72,7 +75,12 @@ async def _execute_schedule(store: Store, schedule: ScheduleDefinition) -> None:
 
         if chunks:
             store.append_message(
-                meta.id, Message(role=Role.AGENT, content="".join(chunks))
+                meta.id,
+                Message(
+                    role=Role.AGENT,
+                    content="".join(chunks),
+                    actor_id=schedule.agent_id,
+                ),
             )
 
         now = datetime.now(timezone.utc)
