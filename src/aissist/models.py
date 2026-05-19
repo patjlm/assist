@@ -8,6 +8,19 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class Realm(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    name: str
+    owner_email: str
+    personal: bool = False
+    members: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RealmCreate(BaseModel):
+    name: str
+
+
 class AgentDefinition(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     name: str
@@ -27,6 +40,7 @@ class AgentDefinition(BaseModel):
     disallow_transfer_to_peers: bool = False
     output_key: str | None = None
     enable_ui: bool = False
+    session_ttl_days: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -48,6 +62,7 @@ class AgentCreate(BaseModel):
     disallow_transfer_to_peers: bool = False
     output_key: str | None = None
     enable_ui: bool = False
+    session_ttl_days: int | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -68,6 +83,7 @@ class AgentUpdate(BaseModel):
     disallow_transfer_to_peers: bool | None = None
     output_key: str | None = None
     enable_ui: bool | None = None
+    session_ttl_days: int | None = None
 
 
 class Role(str, Enum):

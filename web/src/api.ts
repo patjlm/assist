@@ -17,6 +17,7 @@ export interface Agent {
   disallow_transfer_to_peers: boolean;
   output_key: string | null;
   enable_ui: boolean;
+  session_ttl_days: number | null;
   created_at: string;
 }
 
@@ -38,6 +39,7 @@ export interface AgentCreate {
   disallow_transfer_to_peers?: boolean;
   output_key?: string | null;
   enable_ui?: boolean;
+  session_ttl_days?: number | null;
 }
 
 export interface SessionMeta {
@@ -64,6 +66,15 @@ export interface User {
   picture: string;
 }
 
+export interface Realm {
+  id: string;
+  name: string;
+  owner_email: string;
+  personal: boolean;
+  members: string[];
+  created_at: string;
+}
+
 const BASE = "/api";
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -86,44 +97,69 @@ export const api = {
     },
     logout: () => request<void>("/auth/logout", { method: "POST" }),
   },
-  agents: {
-    list: () => request<Agent[]>("/agents"),
-    get: (id: string) => request<Agent>(`/agents/${id}`),
-    create: (body: AgentCreate) =>
-      request<Agent>("/agents", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: Partial<AgentCreate>) =>
-      request<Agent>(`/agents/${id}`, {
+  realms: {
+    list: () => request<Realm[]>("/realms"),
+    create: (name: string) =>
+      request<Realm>("/realms", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    get: (id: string) => request<Realm>(`/realms/${id}`),
+    update: (id: string, body: { name?: string }) =>
+      request<Realm>(`/realms/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
     delete: (id: string) =>
-      request<void>(`/agents/${id}`, { method: "DELETE" }),
+      request<void>(`/realms/${id}`, { method: "DELETE" }),
+  },
+  agents: {
+    list: (realmId: string) => request<Agent[]>(`/realms/${realmId}/agents`),
+    get: (realmId: string, id: string) =>
+      request<Agent>(`/realms/${realmId}/agents/${id}`),
+    create: (realmId: string, body: AgentCreate) =>
+      request<Agent>(`/realms/${realmId}/agents`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    update: (realmId: string, id: string, body: Partial<AgentCreate>) =>
+      request<Agent>(`/realms/${realmId}/agents/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    delete: (realmId: string, id: string) =>
+      request<void>(`/realms/${realmId}/agents/${id}`, { method: "DELETE" }),
   },
   sessions: {
-    list: (agentId?: string) =>
+    list: (realmId: string, agentId?: string) =>
       request<SessionMeta[]>(
-        `/sessions${agentId ? `?agent_id=${agentId}` : ""}`
+        `/realms/${realmId}/sessions${agentId ? `?agent_id=${agentId}` : ""}`
       ),
-    create: (agentId: string) =>
-      request<SessionMeta>("/sessions", {
+    create: (realmId: string, agentId: string) =>
+      request<SessionMeta>(`/realms/${realmId}/sessions`, {
         method: "POST",
         body: JSON.stringify({ agent_id: agentId }),
       }),
-    get: (id: string) => request<SessionDetail>(`/sessions/${id}`),
-    delete: (id: string) =>
-      request<void>(`/sessions/${id}`, { method: "DELETE" }),
+    get: (realmId: string, id: string) =>
+      request<SessionDetail>(`/realms/${realmId}/sessions/${id}`),
+    delete: (realmId: string, id: string) =>
+      request<void>(`/realms/${realmId}/sessions/${id}`, { method: "DELETE" }),
   },
   chat: async function* (
+    realmId: string,
     sessionId: string,
     message: string,
     uiPrompt?: string
   ) {
-    const res = await fetch(`${BASE}/sessions/${sessionId}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ message, ui_prompt: uiPrompt }),
-    });
+    const res = await fetch(
+      `${BASE}/realms/${realmId}/sessions/${sessionId}/chat`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ message, ui_prompt: uiPrompt }),
+      }
+    );
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();

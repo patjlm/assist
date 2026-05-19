@@ -3,63 +3,62 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import AgentDefinition, Message, SessionMeta
+
+DEFAULT_SESSION_TTL_DAYS = 7
 
 
 class Store:
     def __init__(self, data_dir: str | Path = "data"):
         self.data_dir = Path(data_dir)
-        self.agents_file = self.data_dir / "agents.json"
+        self.agents_dir = self.data_dir / "agents"
         self.sessions_dir = self.data_dir / "sessions"
+        self.agents_dir.mkdir(parents=True, exist_ok=True)
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        if not self.agents_file.exists():
-            self.agents_file.write_text("[]")
 
     # ── agents ──
 
-    def _read_agents(self) -> list[AgentDefinition]:
-        raw = json.loads(self.agents_file.read_text())
-        return [AgentDefinition.model_validate(a) for a in raw]
-
-    def _write_agents(self, agents: list[AgentDefinition]) -> None:
-        self.agents_file.write_text(
-            json.dumps([a.model_dump(mode="json") for a in agents], indent=2)
-        )
+    def _agent_path(self, agent_id: str) -> Path:
+        return self.agents_dir / f"{agent_id}.json"
 
     def list_agents(self) -> list[AgentDefinition]:
-        return self._read_agents()
+        agents = []
+        for p in sorted(self.agents_dir.glob("*.json")):
+            agents.append(AgentDefinition.model_validate_json(p.read_text()))
+        return agents
 
     def get_agent(self, agent_id: str) -> AgentDefinition | None:
-        for a in self._read_agents():
-            if a.id == agent_id:
-                return a
-        return None
+        p = self._agent_path(agent_id)
+        if not p.exists():
+            return None
+        return AgentDefinition.model_validate_json(p.read_text())
 
     def create_agent(self, agent: AgentDefinition) -> AgentDefinition:
-        agents = self._read_agents()
-        agents.append(agent)
-        self._write_agents(agents)
+        self._agent_path(agent.id).write_text(
+            json.dumps(agent.model_dump(mode="json"), indent=2)
+        )
         return agent
 
     def update_agent(self, agent_id: str, updates: dict) -> AgentDefinition | None:
-        agents = self._read_agents()
-        for i, a in enumerate(agents):
-            if a.id == agent_id:
-                data = a.model_dump()
-                data.update({k: v for k, v in updates.items() if v is not None})
-                agents[i] = AgentDefinition.model_validate(data)
-                self._write_agents(agents)
-                return agents[i]
-        return None
+        agent = self.get_agent(agent_id)
+        if not agent:
+            return None
+        data = agent.model_dump()
+        data.update({k: v for k, v in updates.items() if v is not None})
+        updated = AgentDefinition.model_validate(data)
+        self._agent_path(agent_id).write_text(
+            json.dumps(updated.model_dump(mode="json"), indent=2)
+        )
+        return updated
 
     def delete_agent(self, agent_id: str) -> bool:
-        agents = self._read_agents()
-        filtered = [a for a in agents if a.id != agent_id]
-        if len(filtered) == len(agents):
+        p = self._agent_path(agent_id)
+        if not p.exists():
             return False
-        self._write_agents(filtered)
+        p.unlink()
         return True
 
     # ── sessions ──
@@ -78,11 +77,22 @@ class Store:
         return meta
 
     def list_sessions(self, agent_id: str | None = None) -> list[SessionMeta]:
+        agents = {a.id: a for a in self.list_agents()}
+        now = datetime.now(timezone.utc)
         result = []
         for p in sorted(self.sessions_dir.glob("*.meta.json"), reverse=True):
             meta = SessionMeta.model_validate_json(p.read_text())
             if agent_id and meta.agent_id != agent_id:
                 continue
+            agent = agents.get(meta.agent_id)
+            ttl_days = DEFAULT_SESSION_TTL_DAYS
+            if agent and agent.session_ttl_days is not None:
+                ttl_days = agent.session_ttl_days
+            if ttl_days > 0:
+                age_seconds = (now - meta.updated_at).total_seconds()
+                if age_seconds > ttl_days * 86400:
+                    self.delete_session(meta.id)
+                    continue
             result.append(meta)
         return result
 

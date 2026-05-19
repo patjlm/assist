@@ -139,13 +139,17 @@ select:focus { border-color: var(--accent); }
   margin-bottom: 16px;
 }
 
-.agent-form button {
-  align-self: flex-end;
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agent-form .form-actions button:first-child {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
-.agent-form button:hover { background: var(--accent-hover); }
+.agent-form .form-actions button:first-child:hover { background: var(--accent-hover); }
 
 /* ── Agent cards ── */
 
@@ -408,3 +412,5 @@ select:focus { border-color: var(--accent); }
   color: var(--text-dim);
 }
 .logout-btn:hover { color: var(--text); }
+
+.realm-select { min-width: 160px; font-size: 13px; }

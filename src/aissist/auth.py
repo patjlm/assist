@@ -91,4 +91,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user = _get_user(request)
         if not user:
             return JSONResponse({"detail": "not authenticated"}, status_code=401)
+        request.state.user = user
         return await call_next(request)
+
+
+def get_current_user(request: Request) -> dict:
+    """FastAPI dependency — returns the authenticated user dict.
+    Assumes AuthMiddleware has already set request.state.user."""
+    return request.state.user

@@ -6,7 +6,7 @@ import {
 } from "@openuidev/react-ui";
 import "@openuidev/react-ui/components.css";
 import "@openuidev/react-ui/defaults.css";
-import { api, type Agent, type SessionMeta, type Message, type User } from "./api";
+import { api, type Agent, type SessionMeta, type Message, type User, type Realm } from "./api";
 
 type View = "agents" | "chat";
 
@@ -23,6 +23,8 @@ export default function App() {
   const [streaming, setStreaming] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [realms, setRealms] = useState<Realm[]>([]);
+  const [activeRealm, setActiveRealm] = useState<Realm | null>(null);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
@@ -41,6 +43,7 @@ export default function App() {
   const [formNoPeers, setFormNoPeers] = useState(false);
   const [formOutputKey, setFormOutputKey] = useState("");
   const [formEnableUi, setFormEnableUi] = useState(false);
+  const [formSessionTtl, setFormSessionTtl] = useState("");
 
   const messagesEnd = useRef<HTMLDivElement>(null);
 
@@ -50,23 +53,33 @@ export default function App() {
   );
 
   const loadAgents = useCallback(async () => {
-    setAgents(await api.agents.list());
-  }, []);
+    if (!activeRealm) return;
+    setAgents(await api.agents.list(activeRealm.id));
+  }, [activeRealm]);
 
   const loadSessions = useCallback(async (agentId?: string) => {
-    setSessions(await api.sessions.list(agentId));
-  }, []);
+    if (!activeRealm) return;
+    setSessions(await api.sessions.list(activeRealm.id, agentId));
+  }, [activeRealm]);
 
   useEffect(() => {
-    api.auth.me().then((u) => {
+    api.auth.me().then(async (u) => {
       setUser(u);
       setAuthChecked(true);
       if (u) {
-        loadAgents();
-        loadSessions();
+        const realmList = await api.realms.list();
+        setRealms(realmList);
+        const personal = realmList.find((r) => r.personal) ?? realmList[0];
+        if (personal) setActiveRealm(personal);
       }
     });
-  }, [loadAgents, loadSessions]);
+  }, []);
+
+  useEffect(() => {
+    if (!activeRealm) return;
+    api.agents.list(activeRealm.id).then(setAgents);
+    api.sessions.list(activeRealm.id).then(setSessions);
+  }, [activeRealm]);
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -97,7 +110,7 @@ export default function App() {
   }
 
   async function openSession(sessionId: string) {
-    const detail = await api.sessions.get(sessionId);
+    const detail = await api.sessions.get(activeRealm!.id, sessionId);
     const agent = agents.find((a) => a.id === detail.agent_id) ?? null;
     setActiveAgent(agent);
     setActiveSession(sessionId);
@@ -106,7 +119,7 @@ export default function App() {
   }
 
   async function newSession(agentId: string) {
-    const meta = await api.sessions.create(agentId);
+    const meta = await api.sessions.create(activeRealm!.id, agentId);
     const agent = agents.find((a) => a.id === agentId) ?? null;
     setActiveAgent(agent);
     setActiveSession(meta.id);
@@ -136,7 +149,7 @@ export default function App() {
 
     try {
       const uiArg = activeAgent?.enable_ui ? uiPrompt : undefined;
-      for await (const chunk of api.chat(activeSession, text, uiArg)) {
+      for await (const chunk of api.chat(activeRealm!.id, activeSession, text, uiArg)) {
         setMessages((prev) => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
@@ -189,6 +202,7 @@ export default function App() {
     setFormNoPeers(false);
     setFormOutputKey("");
     setFormEnableUi(false);
+    setFormSessionTtl("");
     setEditingAgent(null);
     setShowForm(false);
     setShowAdvanced(false);
@@ -212,6 +226,7 @@ export default function App() {
     setFormNoPeers(a.disallow_transfer_to_peers);
     setFormOutputKey(a.output_key ?? "");
     setFormEnableUi(a.enable_ui);
+    setFormSessionTtl(a.session_ttl_days != null ? String(a.session_ttl_days) : "");
   }
 
   function editAgent(a: Agent) {
@@ -243,27 +258,28 @@ export default function App() {
       disallow_transfer_to_peers: formNoPeers,
       output_key: formOutputKey || undefined,
       enable_ui: formEnableUi,
+      session_ttl_days: optInt(formSessionTtl),
     };
   }
 
   async function saveAgent() {
     if (!formName.trim() || !formPrompt.trim()) return;
     if (editingAgent) {
-      await api.agents.update(editingAgent.id, collectFormData());
+      await api.agents.update(activeRealm!.id, editingAgent.id, collectFormData());
     } else {
-      await api.agents.create(collectFormData());
+      await api.agents.create(activeRealm!.id, collectFormData());
     }
     resetForm();
     loadAgents();
   }
 
   async function deleteAgent(id: string) {
-    await api.agents.delete(id);
+    await api.agents.delete(activeRealm!.id, id);
     loadAgents();
   }
 
   async function deleteSession(id: string) {
-    await api.sessions.delete(id);
+    await api.sessions.delete(activeRealm!.id, id);
     if (activeSession === id) {
       setActiveSession(null);
       setMessages([]);
@@ -373,6 +389,22 @@ export default function App() {
       <div className="main-panel">
         <div className="header">
           <h1>aissist</h1>
+          {realms.length > 1 && (
+            <select
+              className="realm-select"
+              value={activeRealm?.id ?? ""}
+              onChange={(e) => {
+                const r = realms.find((r) => r.id === e.target.value);
+                if (r) setActiveRealm(r);
+              }}
+            >
+              {realms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}{r.personal ? " (personal)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="header-right">
             <button
               onClick={() => {
@@ -467,6 +499,22 @@ export default function App() {
 
             {showAdvanced && (
               <div className="advanced-section">
+                <label className="field">
+                  <span className="field-label">Session TTL (days)</span>
+                  <span className="field-hint">
+                    Sessions are deleted after this many days of inactivity.
+                    Default is 7. Set to 0 for no expiration.
+                  </span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="7 (default)"
+                    value={formSessionTtl}
+                    onChange={(e) => setFormSessionTtl(e.target.value)}
+                  />
+                </label>
+
                 <label className="field">
                   <span className="field-label">Global instruction</span>
                   <span className="field-hint">
@@ -654,9 +702,12 @@ export default function App() {
               </div>
             )}
 
-            <button onClick={saveAgent}>
-              {editingAgent ? "Save" : "Create"}
-            </button>
+            <div className="form-actions">
+              <button onClick={saveAgent}>
+                {editingAgent ? "Save" : "Create"}
+              </button>
+              <button type="button" onClick={resetForm}>Cancel</button>
+            </div>
           </div>
         )}
 
