@@ -61,7 +61,14 @@ async def login(request: Request) -> Response:
 @router.get("/callback", name="auth_callback")
 async def callback(request: Request) -> Response:
     token = await oauth.google.authorize_access_token(request)
-    userinfo = token.get("userinfo", {})
+    userinfo = dict(token.get("userinfo", {}))
+    if "picture" not in userinfo and "access_token" in token:
+        resp = await oauth.google.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo", token=token
+        )
+        extra = resp.json()
+        if "picture" in extra:
+            userinfo["picture"] = extra["picture"]
     user_data = {
         "email": userinfo.get("email", ""),
         "name": userinfo.get("name", ""),
