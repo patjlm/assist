@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
-import type { Realm, User, Theme } from "./api";
+import type { Realm, User } from "./api";
 
 interface TopBarProps {
   user: User;
   realms: Realm[];
   activeRealm: Realm | null;
-  theme: Theme;
   onRealmChange: (realm: Realm) => void;
   onNewRealm: () => void;
   onEditRealm: () => void;
-  onToggleTheme: () => void;
+  onPreferences: () => void;
   onLogout: () => void;
   onToggleSidebar: () => void;
 }
@@ -18,11 +17,10 @@ export default function TopBar({
   user,
   realms,
   activeRealm,
-  theme,
   onRealmChange,
   onNewRealm,
   onEditRealm,
-  onToggleTheme,
+  onPreferences,
   onLogout,
   onToggleSidebar,
 }: TopBarProps) {
@@ -92,8 +90,8 @@ export default function TopBar({
           </button>
           {hamburgerOpen && (
             <div className="dropdown-menu hamburger-menu" role="menu">
-              <button role="menuitem" onClick={onToggleTheme}>
-                {theme === "dark" ? "Light theme" : "Dark theme"}
+              <button role="menuitem" onClick={onPreferences}>
+                Preferences
               </button>
               <button role="menuitem" onClick={onLogout}>
                 Logout

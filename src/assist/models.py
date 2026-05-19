@@ -155,3 +155,4 @@ class ScheduleUpdate(BaseModel):
 
 class UserPreferences(BaseModel):
     theme: Literal["dark", "light"] = "dark"
+    display_name: str | None = None

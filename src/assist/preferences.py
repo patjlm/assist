@@ -57,5 +57,11 @@ def list_users() -> list[dict]:
         p = d / "profile.json"
         if not p.exists():
             continue
-        users.append(json.loads(p.read_text()))
+        profile = json.loads(p.read_text())
+        prefs_path = d / "preferences.json"
+        if prefs_path.exists():
+            prefs = json.loads(prefs_path.read_text())
+            if prefs.get("display_name"):
+                profile["name"] = prefs["display_name"]
+        users.append(profile)
     return users

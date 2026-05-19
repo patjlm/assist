@@ -26,16 +26,22 @@ export default function ChatArea({
 }: ChatAreaProps) {
   const [input, setInput] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!streaming) inputRef.current?.focus();
+  }, [streaming]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || streaming) return;
     onSend(input.trim());
     setInput("");
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   return (
@@ -99,10 +105,10 @@ export default function ChatArea({
           {muted ? "🔇" : "🔊"}
         </button>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={muted ? "Chat with other users..." : "Type a message..."}
-          disabled={streaming}
           aria-label="Message input"
           autoFocus
         />

@@ -104,6 +104,7 @@ export type Theme = "dark" | "light";
 
 export interface UserPreferences {
   theme: Theme;
+  display_name?: string | null;
 }
 
 const BASE = "/api";

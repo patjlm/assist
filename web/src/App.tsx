@@ -16,6 +16,7 @@ import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import AgentForm from "./AgentForm";
 import MemberPicker from "./MemberPicker";
+import PreferencesForm from "./PreferencesForm";
 
 type CenterMode =
   | "welcome"
@@ -23,7 +24,8 @@ type CenterMode =
   | "agent-form"
   | "session-edit"
   | "realm-edit"
-  | "realm-create";
+  | "realm-create"
+  | "preferences";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -47,6 +49,7 @@ export default function App() {
   const [sessionFormTitle, setSessionFormTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [usersByEmail, setUsersByEmail] = useState<Map<string, User>>(new Map());
+  const [oauthName, setOauthName] = useState("");
 
   const activeSessionRef = useRef(activeSession);
   activeSessionRef.current = activeSession;
@@ -75,19 +78,26 @@ export default function App() {
 
   useEffect(() => {
     api.auth.me().then(async (u) => {
-      setUser(u);
       setAuthChecked(true);
       if (u) {
+        setOauthName(u.name || "");
         const [realmList, prefs, allUsers] = await Promise.all([
           api.realms.list(),
           api.preferences.get(),
           api.users.list(),
         ]);
+        if (prefs.display_name) {
+          setUser({ ...u, name: prefs.display_name });
+        } else {
+          setUser(u);
+        }
         setRealms(realmList);
         setTheme(prefs.theme);
         setUsersByEmail(new Map(allUsers.map((u) => [u.email, u])));
         const personal = realmList.find((r) => r.personal) ?? realmList[0];
         if (personal) setActiveRealm(personal);
+      } else {
+        setUser(null);
       }
     });
   }, []);
@@ -146,10 +156,17 @@ export default function App() {
     );
   }
 
-  async function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    await api.preferences.update({ theme: next });
+  async function savePreferences(prefs: import("./api").UserPreferences) {
+    await api.preferences.update(prefs);
+    setTheme(prefs.theme);
+    if (prefs.display_name) {
+      setUser((prev) => prev ? { ...prev, name: prefs.display_name! } : prev);
+    } else {
+      setUser((prev) => prev ? { ...prev, name: oauthName } : prev);
+    }
+    const allUsers = await api.users.list();
+    setUsersByEmail(new Map(allUsers.map((u) => [u.email, u])));
+    setCenterMode("welcome");
   }
 
   async function openSession(sessionId: string) {
@@ -308,7 +325,6 @@ export default function App() {
         user={user}
         realms={realms}
         activeRealm={activeRealm}
-        theme={theme}
         onRealmChange={(r) => {
           setActiveRealm(r);
           setCenterMode("welcome");
@@ -319,7 +335,7 @@ export default function App() {
           setCenterMode("realm-create");
         }}
         onEditRealm={openRealmEdit}
-        onToggleTheme={toggleTheme}
+        onPreferences={() => setCenterMode("preferences")}
         onLogout={async () => {
           await api.auth.logout();
           setUser(null);
@@ -462,6 +478,15 @@ export default function App() {
                 Delete session
               </button>
             </div>
+          )}
+
+          {centerMode === "preferences" && (
+            <PreferencesForm
+              preferences={{ theme, display_name: user?.name !== oauthName ? user?.name ?? null : null }}
+              oauthName={oauthName}
+              onSave={savePreferences}
+              onCancel={() => setCenterMode("welcome")}
+            />
           )}
 
           {centerMode === "chat" && activeSession && (
