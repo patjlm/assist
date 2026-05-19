@@ -1,0 +1,29 @@
+[project]
+name = "aissist"
+version = "0.1.0"
+description = "Multi-agent platform built on Google ADK"
+requires-python = ">=3.11"
+dependencies = [
+    "authlib>=1.7.2",
+    "google-adk>=1.33.0",
+    "httpx>=0.28.1",
+    "itsdangerous>=2.2.0",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.30.0",
+]
+
+[project.scripts]
+aissist = "aissist.app:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aissist"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "ruff>=0.15.13",
+]
