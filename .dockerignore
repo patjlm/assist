@@ -1,0 +1,11 @@
+data/
+web/node_modules/
+web/dist/
+.env
+.git/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
