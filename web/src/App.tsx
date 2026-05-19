@@ -274,8 +274,15 @@ export default function App() {
   }
 
   async function deleteAgent(id: string) {
+    const agent = agents.find((a) => a.id === id);
+    const { count } = await api.agents.sessionCount(activeRealm!.id, id);
+    const sessionInfo = count > 0
+      ? `\n\n${count} session${count === 1 ? "" : "s"} will also be deleted.`
+      : "";
+    if (!confirm(`Delete agent "${agent?.name ?? id}"?${sessionInfo}`)) return;
     await api.agents.delete(activeRealm!.id, id);
     loadAgents();
+    loadSessions();
   }
 
   async function deleteSession(id: string) {

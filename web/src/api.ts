@@ -129,6 +129,8 @@ export const api = {
       }),
     delete: (realmId: string, id: string) =>
       request<void>(`/realms/${realmId}/agents/${id}`, { method: "DELETE" }),
+    sessionCount: (realmId: string, id: string) =>
+      request<{ count: number }>(`/realms/${realmId}/agents/${id}/session-count`),
   },
   sessions: {
     list: (realmId: string, agentId?: string) =>

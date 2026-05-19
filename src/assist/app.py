@@ -167,10 +167,18 @@ def update_agent(
     return agent
 
 
+@app.get("/api/realms/{realm_id}/agents/{agent_id}/session-count")
+def agent_session_count(agent_id: str, store: RealmStore) -> dict:
+    if not store.get_agent(agent_id):
+        raise HTTPException(404, "agent not found")
+    return {"count": store.count_sessions_for_agent(agent_id)}
+
+
 @app.delete("/api/realms/{realm_id}/agents/{agent_id}", status_code=204)
 def delete_agent(agent_id: str, store: RealmStore) -> None:
     if not store.delete_agent(agent_id):
         raise HTTPException(404, "agent not found")
+    store.delete_sessions_for_agent(agent_id)
 
 
 # ── Sessions ──

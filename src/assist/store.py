@@ -123,6 +123,25 @@ class Store:
             data["updated_at"] = message.timestamp.isoformat()
             self._meta_path(session_id).write_text(json.dumps(data, indent=2))
 
+    def count_sessions_for_agent(self, agent_id: str) -> int:
+        count = 0
+        for p in self.sessions_dir.glob("*.meta.json"):
+            meta = SessionMeta.model_validate_json(p.read_text())
+            if meta.agent_id == agent_id:
+                count += 1
+        return count
+
+    def delete_sessions_for_agent(self, agent_id: str) -> int:
+        deleted = 0
+        for p in list(self.sessions_dir.glob("*.meta.json")):
+            meta = SessionMeta.model_validate_json(p.read_text())
+            if meta.agent_id == agent_id:
+                session_id = meta.id
+                p.unlink()
+                self._messages_path(session_id).unlink(missing_ok=True)
+                deleted += 1
+        return deleted
+
     def delete_session(self, session_id: str) -> bool:
         meta_p = self._meta_path(session_id)
         msg_p = self._messages_path(session_id)
