@@ -635,3 +635,70 @@ select:focus { border-color: var(--accent); }
   transition: background 0.15s;
 }
 .google-login-btn:hover { background: var(--accent-hover); }
+
+/* ── Focus styles ── */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(85, 128, 204, 0.25);
+}
+
+/* ── Sidebar toggle (mobile) ── */
+
+.sidebar-toggle {
+  display: none;
+  font-size: 18px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  line-height: 1;
+}
+.sidebar-toggle:hover { background: var(--bg-hover); }
+
+.sidebar-overlay {
+  display: none;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 768px) {
+  .sidebar-toggle { display: block; }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    width: 280px;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .agent-form { padding: 16px; margin: 16px; }
+  .realm-edit-form { padding: 16px; margin: 16px auto; }
+  .field-row { flex-direction: column; }
+}
