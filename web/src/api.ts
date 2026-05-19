@@ -75,6 +75,12 @@ export interface Realm {
   created_at: string;
 }
 
+export type Theme = "dark" | "light";
+
+export interface UserPreferences {
+  theme: Theme;
+}
+
 const BASE = "/api";
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -96,6 +102,14 @@ export const api = {
       return res.json();
     },
     logout: () => request<void>("/auth/logout", { method: "POST" }),
+  },
+  preferences: {
+    get: () => request<UserPreferences>("/preferences"),
+    update: (prefs: UserPreferences) =>
+      request<UserPreferences>("/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs),
+      }),
   },
   realms: {
     list: () => request<Realm[]>("/realms"),

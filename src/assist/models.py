@@ -107,3 +107,7 @@ class SessionMeta(BaseModel):
 
 class SessionDetail(SessionMeta):
     messages: list[Message] = []
+
+
+class UserPreferences(BaseModel):
+    theme: Literal["dark", "light"] = "dark"

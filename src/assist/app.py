@@ -24,6 +24,7 @@ from .models import (
     Role,
     SessionDetail,
     SessionMeta,
+    UserPreferences,
 )
 from .realms import (
     check_access,
@@ -35,6 +36,7 @@ from .realms import (
     update_realm,
     validate_realm_id,
 )
+from .preferences import get_preferences, set_preferences
 from .runner import run_turn
 from .store import Store
 
@@ -133,6 +135,19 @@ def delete_realm_route(realm_id: str, user: User) -> None:
     if realm.owner_email != user["email"]:
         raise HTTPException(403, "only owner can delete realm")
     delete_realm(realm_id)
+
+
+# ── User preferences ──
+
+
+@app.get("/api/preferences")
+def get_prefs(user: User) -> UserPreferences:
+    return get_preferences(user["email"])
+
+
+@app.put("/api/preferences")
+def update_prefs(body: UserPreferences, user: User) -> UserPreferences:
+    return set_preferences(user["email"], body)
 
 
 # ── Agents ──

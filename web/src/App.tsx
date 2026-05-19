@@ -6,7 +6,7 @@ import {
 } from "@openuidev/react-ui";
 import "@openuidev/react-ui/components.css";
 import "@openuidev/react-ui/defaults.css";
-import { api, type Agent, type SessionMeta, type Message, type User, type Realm } from "./api";
+import { api, type Agent, type SessionMeta, type Message, type User, type Realm, type Theme } from "./api";
 
 type View = "agents" | "chat";
 
@@ -25,6 +25,7 @@ export default function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [realms, setRealms] = useState<Realm[]>([]);
   const [activeRealm, setActiveRealm] = useState<Realm | null>(null);
+  const [theme, setTheme] = useState<Theme>("dark");
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
@@ -63,12 +64,20 @@ export default function App() {
   }, [activeRealm]);
 
   useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
     api.auth.me().then(async (u) => {
       setUser(u);
       setAuthChecked(true);
       if (u) {
-        const realmList = await api.realms.list();
+        const [realmList, prefs] = await Promise.all([
+          api.realms.list(),
+          api.preferences.get(),
+        ]);
         setRealms(realmList);
+        setTheme(prefs.theme);
         const personal = realmList.find((r) => r.personal) ?? realmList[0];
         if (personal) setActiveRealm(personal);
       }
@@ -107,6 +116,12 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  async function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    await api.preferences.update({ theme: next });
   }
 
   async function openSession(sessionId: string) {
@@ -423,6 +438,9 @@ export default function App() {
               }}
             >
               {showForm ? "Cancel" : "+ New Agent"}
+            </button>
+            <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
+              {theme === "dark" ? "☀" : "☾"}
             </button>
             <div className="user-info">
               {user.picture && <img src={user.picture} className="avatar" alt="" referrerPolicy="no-referrer" />}
