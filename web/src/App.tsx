@@ -8,12 +8,12 @@ import "@openuidev/react-ui/components.css";
 import "@openuidev/react-ui/defaults.css";
 import { api, type Agent, type SessionMeta, type Message, type User, type Realm, type Theme } from "./api";
 
-type View = "agents" | "chat";
+type CenterMode = "welcome" | "chat" | "agent-form" | "session-edit" | "realm-edit" | "realm-create";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [view, setView] = useState<View>("agents");
+  const [centerMode, setCenterMode] = useState<CenterMode>("welcome");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
@@ -21,7 +21,6 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [showForm, setShowForm] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [realms, setRealms] = useState<Realm[]>([]);
   const [activeRealm, setActiveRealm] = useState<Realm | null>(null);
@@ -45,6 +44,12 @@ export default function App() {
   const [formOutputKey, setFormOutputKey] = useState("");
   const [formEnableUi, setFormEnableUi] = useState(false);
   const [formSessionTtl, setFormSessionTtl] = useState("");
+  const [hamburgerOpen, setHamburgerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<Record<string, boolean>>({});
+  const [realmEditName, setRealmEditName] = useState("");
+  const [realmCreateName, setRealmCreateName] = useState("");
+  const [editingSession, setEditingSession] = useState<SessionMeta | null>(null);
+  const [sessionFormTitle, setSessionFormTitle] = useState("");
 
   const messagesEnd = useRef<HTMLDivElement>(null);
 
@@ -52,6 +57,16 @@ export default function App() {
     () => openuiLibrary.prompt(openuiPromptOptions),
     []
   );
+
+  const sessionsByAgent = useMemo(() => {
+    const map = new Map<string, SessionMeta[]>();
+    for (const s of sessions) {
+      const list = map.get(s.agent_id) ?? [];
+      list.push(s);
+      map.set(s.agent_id, list);
+    }
+    return map;
+  }, [sessions]);
 
   const loadAgents = useCallback(async () => {
     if (!activeRealm) return;
@@ -94,6 +109,13 @@ export default function App() {
     messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!hamburgerOpen) return;
+    const handler = () => setHamburgerOpen(false);
+    setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => document.removeEventListener("click", handler);
+  }, [hamburgerOpen]);
+
   if (!authChecked) {
     return (
       <div className="app">
@@ -130,7 +152,7 @@ export default function App() {
     setActiveAgent(agent);
     setActiveSession(sessionId);
     setMessages(detail.messages);
-    setView("chat");
+    setCenterMode("chat");
   }
 
   async function newSession(agentId: string) {
@@ -139,7 +161,7 @@ export default function App() {
     setActiveAgent(agent);
     setActiveSession(meta.id);
     setMessages([]);
-    setView("chat");
+    setCenterMode("chat");
     loadSessions();
   }
 
@@ -219,8 +241,8 @@ export default function App() {
     setFormEnableUi(false);
     setFormSessionTtl("");
     setEditingAgent(null);
-    setShowForm(false);
     setShowAdvanced(false);
+    setCenterMode("welcome");
   }
 
   function populateForm(a: Agent) {
@@ -247,7 +269,7 @@ export default function App() {
   function editAgent(a: Agent) {
     setEditingAgent(a);
     populateForm(a);
-    setShowForm(true);
+    setCenterMode("agent-form");
   }
 
   function collectFormData() {
@@ -296,6 +318,10 @@ export default function App() {
       : "";
     if (!confirm(`Delete agent "${agent?.name ?? id}"?${sessionInfo}`)) return;
     await api.agents.delete(activeRealm!.id, id);
+    if (editingAgent?.id === id) {
+      setCenterMode("welcome");
+      setEditingAgent(null);
+    }
     loadAgents();
     loadSessions();
   }
@@ -305,492 +331,640 @@ export default function App() {
     if (activeSession === id) {
       setActiveSession(null);
       setMessages([]);
-      setView("agents");
+      setCenterMode("welcome");
     }
     loadSessions();
   }
 
-  // ── Chat view ──
-
-  if (view === "chat" && activeSession) {
-    return (
-      <div className="app">
-        <div className="sidebar">
-          <button className="back-btn" onClick={() => setView("agents")}>
-            &larr; Back
-          </button>
-          <h3>{activeAgent?.name ?? "Agent"}</h3>
-          <p className="desc">{activeAgent?.description}</p>
-          <hr />
-          <h4>Sessions</h4>
-          {sessions
-            .filter((s) => s.agent_id === activeAgent?.id)
-            .map((s) => (
-              <div
-                key={s.id}
-                className={`session-item ${s.id === activeSession ? "active" : ""}`}
-                onClick={() => openSession(s.id)}
-              >
-                <span className="session-title">
-                  {s.title || "New session"}
-                </span>
-                <button
-                  className="delete-session"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSession(s.id);
-                  }}
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-          <button
-            className="new-btn"
-            onClick={() => newSession(activeAgent!.id)}
-          >
-            + New session
-          </button>
-        </div>
-        <div className="chat-area">
-          <div className="messages">
-            {messages.map((m, i) => {
-              const isLastAgent =
-                m.role === "agent" && i === messages.length - 1;
-              const useRenderer = activeAgent?.enable_ui && m.role === "agent";
-              const showSpinner =
-                isLastAgent && streaming && !m.content;
-              return (
-                <div key={i} className={`message ${m.role}`}>
-                  <span className="role-tag">{m.role}</span>
-                  <div className="content">
-                    {showSpinner ? (
-                      <span className="spinner" />
-                    ) : useRenderer ? (
-                      <Renderer
-                        response={m.content}
-                        library={openuiLibrary}
-                        isStreaming={isLastAgent && streaming}
-                      />
-                    ) : (
-                      m.content
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={messagesEnd} />
-          </div>
-          <form
-            className="input-bar"
-            onSubmit={(e) => {
-              e.preventDefault();
-              sendMessage();
-            }}
-          >
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message..."
-              disabled={streaming}
-              autoFocus
-            />
-            <button type="submit" disabled={streaming || !input.trim()}>
-              Send
-            </button>
-          </form>
-        </div>
-      </div>
-    );
+  function editSession(s: SessionMeta) {
+    setEditingSession(s);
+    setSessionFormTitle(s.title);
+    setCenterMode("session-edit");
   }
 
-  // ── Agents list view ──
+  async function saveSession() {
+    if (!editingSession) return;
+    await api.sessions.update(activeRealm!.id, editingSession.id, {
+      title: sessionFormTitle,
+    });
+    setEditingSession(null);
+    loadSessions();
+    setCenterMode("welcome");
+  }
+
+  function toggleSidebarNode(agentId: string) {
+    setSidebarCollapsed((prev) => ({ ...prev, [agentId]: !prev[agentId] }));
+  }
+
+  function openRealmEdit() {
+    if (!activeRealm) return;
+    setRealmEditName(activeRealm.name);
+    setCenterMode("realm-edit");
+  }
+
+  async function saveRealm() {
+    if (!activeRealm || !realmEditName.trim()) return;
+    await api.realms.update(activeRealm.id, { name: realmEditName.trim() });
+    const realmList = await api.realms.list();
+    setRealms(realmList);
+    const updated = realmList.find((r) => r.id === activeRealm.id);
+    if (updated) setActiveRealm(updated);
+    setCenterMode("welcome");
+  }
+
+  async function deleteRealm() {
+    if (!activeRealm) return;
+    if (!confirm(`Delete realm "${activeRealm.name}"? All agents and sessions will be lost.`)) return;
+    await api.realms.delete(activeRealm.id);
+    const realmList = await api.realms.list();
+    setRealms(realmList);
+    const next = realmList[0] ?? null;
+    setActiveRealm(next);
+    setCenterMode("welcome");
+  }
+
+  async function createRealm() {
+    if (!realmCreateName.trim()) return;
+    const created = await api.realms.create(realmCreateName.trim());
+    const realmList = await api.realms.list();
+    setRealms(realmList);
+    const newRealm = realmList.find((r) => r.id === created.id);
+    if (newRealm) setActiveRealm(newRealm);
+    setRealmCreateName("");
+    setCenterMode("welcome");
+  }
 
   return (
     <div className="app">
-      <div className="main-panel">
-        <div className="header">
-          <h1>assist</h1>
-          {realms.length > 1 && (
-            <select
-              className="realm-select"
-              value={activeRealm?.id ?? ""}
-              onChange={(e) => {
-                const r = realms.find((r) => r.id === e.target.value);
-                if (r) setActiveRealm(r);
-              }}
-            >
-              {realms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}{r.personal ? " (personal)" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="header-right">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <select
+            className="realm-select"
+            value={activeRealm?.id ?? ""}
+            onChange={(e) => {
+              const r = realms.find((r) => r.id === e.target.value);
+              if (r) {
+                setActiveRealm(r);
+                setCenterMode("welcome");
+              }
+            }}
+          >
+            {realms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}{r.personal ? " (personal)" : ""}
+              </option>
+            ))}
+          </select>
+          <button className="icon-btn" onClick={openRealmEdit} title="Edit realm">
+            Edit
+          </button>
+          <button
+            onClick={() => {
+              setRealmCreateName("");
+              setCenterMode("realm-create");
+            }}
+          >
+            New
+          </button>
+        </div>
+        <div className="top-bar-right">
+          <div className="user-info">
+            {user.picture && <img src={user.picture} className="avatar" alt="" referrerPolicy="no-referrer" />}
+            <span className="user-name">{user.name || user.email}</span>
+          </div>
+          <div className="hamburger-wrapper">
             <button
-              onClick={() => {
-                if (showForm) {
-                  resetForm();
-                } else {
-                  setShowForm(true);
-                }
+              className="hamburger-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setHamburgerOpen(!hamburgerOpen);
               }}
+              title="Menu"
             >
-              {showForm ? "Cancel" : "+ New Agent"}
+              &#9776;
             </button>
-            <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
-              {theme === "dark" ? "☀" : "☾"}
-            </button>
-            <div className="user-info">
-              {user.picture && <img src={user.picture} className="avatar" alt="" referrerPolicy="no-referrer" />}
-              <span className="user-name">{user.name || user.email}</span>
-              <button className="logout-btn" onClick={async () => { await api.auth.logout(); setUser(null); }}>
-                Logout
-              </button>
-            </div>
+            {hamburgerOpen && (
+              <div className="dropdown-menu hamburger-menu">
+                <button onClick={toggleTheme}>
+                  {theme === "dark" ? "Light theme" : "Dark theme"}
+                </button>
+                <button onClick={async () => { await api.auth.logout(); setUser(null); }}>
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
+      </header>
 
-        {showForm && (
-          <div className="agent-form">
-            <label className="field">
-              <span className="field-label">Name</span>
-              <input
-                placeholder="e.g. Code Reviewer"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">Description</span>
-              <span className="field-hint">
-                Short summary shown in the agent list. Also used by parent
-                agents to decide when to delegate to this one.
-              </span>
-              <input
-                placeholder="e.g. Reviews code for bugs and style issues"
-                value={formDesc}
-                onChange={(e) => setFormDesc(e.target.value)}
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">System prompt</span>
-              <span className="field-hint">
-                The core instruction that defines the agent's behavior.
-                Supports {"{"} session_state_key {"}"} template variables.
-              </span>
-              <textarea
-                placeholder="You are a helpful assistant that..."
-                value={formPrompt}
-                onChange={(e) => setFormPrompt(e.target.value)}
-                rows={4}
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">Model</span>
-              <input
-                placeholder="gemini-2.5-flash"
-                value={formModel}
-                onChange={(e) => setFormModel(e.target.value)}
-              />
-            </label>
-
-            <label className="field checkbox-field">
-              <input
-                type="checkbox"
-                checked={formEnableUi}
-                onChange={(e) => setFormEnableUi(e.target.checked)}
-              />
-              <div>
-                <span className="field-label">Enable UI components</span>
-                <span className="field-hint">
-                  Allow the agent to render rich UI: charts, tables, forms,
-                  cards, tabs, and more via OpenUI.
-                </span>
+      <div className="workspace">
+        <aside className="sidebar">
+          <button
+            className="new-btn"
+            onClick={() => {
+              resetForm();
+              setCenterMode("agent-form");
+            }}
+          >
+            + New agent
+          </button>
+          {agents.map((a) => {
+            const collapsed = sidebarCollapsed[a.id] ?? false;
+            const agentSessions = sessionsByAgent.get(a.id) ?? [];
+            const isEditingThis = centerMode === "agent-form" && editingAgent?.id === a.id;
+            return (
+              <div key={a.id} className="agent-tree-node">
+                <div
+                  className={`agent-tree-header${isEditingThis ? " active" : ""}`}
+                >
+                  <span
+                    className={`chevron${collapsed ? "" : " open"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSidebarNode(a.id);
+                    }}
+                  >
+                    &#9654;
+                  </span>
+                  <span className="agent-tree-name" onClick={() => editAgent(a)}>
+                    {a.name}
+                  </span>
+                  <span className="model-tag">{a.model}</span>
+                  <button
+                    className="new-session-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      newSession(a.id);
+                    }}
+                    title="New session"
+                  >
+                    +
+                  </button>
+                </div>
+                {!collapsed && (
+                  <div className="agent-tree-sessions">
+                    {agentSessions.map((s) => (
+                      <div
+                        key={s.id}
+                        className={`session-item${centerMode === "chat" && s.id === activeSession ? " active" : ""}`}
+                        onClick={() => openSession(s.id)}
+                      >
+                        <span className="session-title">
+                          {s.title || "..."}
+                        </span>
+                        <button
+                          className="edit-session"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            editSession(s);
+                          }}
+                          title="Edit session"
+                        >
+                          &#9998;
+                        </button>
+                        <button
+                          className="delete-session"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(s.id);
+                          }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </label>
+            );
+          })}
+          {agents.length === 0 && (
+            <p className="empty">No agents yet.</p>
+          )}
+        </aside>
 
-            <button
-              type="button"
-              className="toggle-advanced"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              {showAdvanced ? "- Hide" : "+ Show"} advanced settings
-            </button>
+        <main className="center-pane">
+          {centerMode === "welcome" && (
+            <div className="welcome-pane">
+              <h2>assist</h2>
+              <p>Select a session or create an agent to get started.</p>
+            </div>
+          )}
 
-            {showAdvanced && (
-              <div className="advanced-section">
-                <label className="field">
-                  <span className="field-label">Session TTL (days)</span>
+          {centerMode === "realm-edit" && activeRealm && (
+            <div className="realm-edit-form">
+              <h2>{activeRealm.personal ? "Personal realm" : "Edit realm"}</h2>
+              <label className="field">
+                <span className="field-label">Realm name</span>
+                <input
+                  value={realmEditName}
+                  onChange={(e) => setRealmEditName(e.target.value)}
+                  placeholder="Realm name"
+                />
+              </label>
+              <div className="form-actions">
+                <button onClick={saveRealm}>Save</button>
+                <button type="button" onClick={() => setCenterMode("welcome")}>Cancel</button>
+              </div>
+              {!activeRealm.personal && (
+                <button className="danger delete-realm-btn" onClick={deleteRealm}>
+                  Delete realm
+                </button>
+              )}
+            </div>
+          )}
+
+          {centerMode === "realm-create" && (
+            <div className="realm-edit-form">
+              <h2>New realm</h2>
+              <label className="field">
+                <span className="field-label">Realm name</span>
+                <input
+                  value={realmCreateName}
+                  onChange={(e) => setRealmCreateName(e.target.value)}
+                  placeholder="e.g. My Team"
+                  autoFocus
+                />
+              </label>
+              <div className="form-actions">
+                <button onClick={createRealm}>Create</button>
+                <button type="button" onClick={() => setCenterMode("welcome")}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {centerMode === "agent-form" && (
+            <div className="agent-form">
+              <h2>{editingAgent ? `Edit: ${editingAgent.name}` : "New agent"}</h2>
+              <label className="field">
+                <span className="field-label">Name</span>
+                <input
+                  placeholder="e.g. Code Reviewer"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">Description</span>
+                <span className="field-hint">
+                  Short summary shown in the agent list. Also used by parent
+                  agents to decide when to delegate to this one.
+                </span>
+                <input
+                  placeholder="e.g. Reviews code for bugs and style issues"
+                  value={formDesc}
+                  onChange={(e) => setFormDesc(e.target.value)}
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">System prompt</span>
+                <span className="field-hint">
+                  The core instruction that defines the agent's behavior.
+                  Supports {"{"} session_state_key {"}"} template variables.
+                </span>
+                <textarea
+                  placeholder="You are a helpful assistant that..."
+                  value={formPrompt}
+                  onChange={(e) => setFormPrompt(e.target.value)}
+                  rows={4}
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">Model</span>
+                <input
+                  placeholder="gemini-2.5-flash"
+                  value={formModel}
+                  onChange={(e) => setFormModel(e.target.value)}
+                />
+              </label>
+
+              <label className="field checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={formEnableUi}
+                  onChange={(e) => setFormEnableUi(e.target.checked)}
+                />
+                <div>
+                  <span className="field-label">Enable UI components</span>
                   <span className="field-hint">
-                    Sessions are deleted after this many days of inactivity.
-                    Default is 7. Set to 0 for no expiration.
+                    Allow the agent to render rich UI: charts, tables, forms,
+                    cards, tabs, and more via OpenUI.
                   </span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    placeholder="7 (default)"
-                    value={formSessionTtl}
-                    onChange={(e) => setFormSessionTtl(e.target.value)}
-                  />
-                </label>
+                </div>
+              </label>
 
-                <label className="field">
-                  <span className="field-label">Global instruction</span>
-                  <span className="field-hint">
-                    Prepended to this agent and all its sub-agents. Use for
-                    shared rules like output format or safety guidelines.
-                  </span>
-                  <textarea
-                    placeholder="Always respond in markdown..."
-                    value={formGlobal}
-                    onChange={(e) => setFormGlobal(e.target.value)}
-                    rows={2}
-                  />
-                </label>
+              <button
+                type="button"
+                className="toggle-advanced"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                {showAdvanced ? "- Hide" : "+ Show"} advanced settings
+              </button>
 
-                <div className="field-row">
+              {showAdvanced && (
+                <div className="advanced-section">
                   <label className="field">
-                    <span className="field-label">Temperature</span>
+                    <span className="field-label">Session TTL (days)</span>
                     <span className="field-hint">
-                      0 = deterministic, 2 = very creative
-                    </span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="2"
-                      placeholder="default"
-                      value={formTemp}
-                      onChange={(e) => setFormTemp(e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Top P</span>
-                    <span className="field-hint">
-                      Nucleus sampling cutoff (0-1)
-                    </span>
-                    <input
-                      type="number"
-                      step="0.05"
-                      min="0"
-                      max="1"
-                      placeholder="default"
-                      value={formTopP}
-                      onChange={(e) => setFormTopP(e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Top K</span>
-                    <span className="field-hint">
-                      Number of top tokens to consider
+                      Sessions are deleted after this many days of inactivity.
+                      Default is 7. Set to 0 for no expiration.
                     </span>
                     <input
                       type="number"
                       step="1"
-                      min="1"
-                      placeholder="default"
-                      value={formTopK}
-                      onChange={(e) => setFormTopK(e.target.value)}
+                      min="0"
+                      placeholder="7 (default)"
+                      value={formSessionTtl}
+                      onChange={(e) => setFormSessionTtl(e.target.value)}
                     />
                   </label>
-                </div>
 
-                <div className="field-row">
                   <label className="field">
-                    <span className="field-label">Max output tokens</span>
+                    <span className="field-label">Global instruction</span>
                     <span className="field-hint">
-                      Limit response length
+                      Prepended to this agent and all its sub-agents. Use for
+                      shared rules like output format or safety guidelines.
                     </span>
-                    <input
-                      type="number"
-                      step="256"
-                      min="1"
-                      placeholder="default"
-                      value={formMaxTokens}
-                      onChange={(e) => setFormMaxTokens(e.target.value)}
+                    <textarea
+                      placeholder="Always respond in markdown..."
+                      value={formGlobal}
+                      onChange={(e) => setFormGlobal(e.target.value)}
+                      rows={2}
                     />
                   </label>
-                  <label className="field">
-                    <span className="field-label">Presence penalty</span>
-                    <span className="field-hint">
-                      Penalize repeated topics (-2 to 2)
-                    </span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="-2"
-                      max="2"
-                      placeholder="default"
-                      value={formPresence}
-                      onChange={(e) => setFormPresence(e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Frequency penalty</span>
-                    <span className="field-hint">
-                      Penalize repeated words (-2 to 2)
-                    </span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="-2"
-                      max="2"
-                      placeholder="default"
-                      value={formFrequency}
-                      onChange={(e) => setFormFrequency(e.target.value)}
-                    />
-                  </label>
-                </div>
 
-                <label className="field">
-                  <span className="field-label">Stop sequences</span>
-                  <span className="field-hint">
-                    Comma-separated strings that stop generation when produced
-                  </span>
-                  <input
-                    placeholder='e.g. END, ###'
-                    value={formStopSeq}
-                    onChange={(e) => setFormStopSeq(e.target.value)}
-                  />
-                </label>
-
-                <label className="field">
-                  <span className="field-label">Output key</span>
-                  <span className="field-hint">
-                    If set, the agent's response is saved to session state under
-                    this key, making it available to other agents via{" "}
-                    {"{"} key_name {"}"}
-                  </span>
-                  <input
-                    placeholder="e.g. review_result"
-                    value={formOutputKey}
-                    onChange={(e) => setFormOutputKey(e.target.value)}
-                  />
-                </label>
-
-                <label className="field">
-                  <span className="field-label">Include contents</span>
-                  <span className="field-hint">
-                    Whether to include conversation history in the LLM context.
-                    Set to "none" for stateless agents that only use the current
-                    input.
-                  </span>
-                  <select
-                    value={formInclude}
-                    onChange={(e) =>
-                      setFormInclude(e.target.value as "default" | "none")
-                    }
-                  >
-                    <option value="default">default (include history)</option>
-                    <option value="none">none (stateless)</option>
-                  </select>
-                </label>
-
-                <div className="field-row">
-                  <label className="field checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={formNoParent}
-                      onChange={(e) => setFormNoParent(e.target.checked)}
-                    />
-                    <div>
-                      <span className="field-label">
-                        Disallow transfer to parent
-                      </span>
+                  <div className="field-row">
+                    <label className="field">
+                      <span className="field-label">Temperature</span>
                       <span className="field-hint">
-                        Prevent this agent from escalating back to its parent
+                        0 = deterministic, 2 = very creative
                       </span>
-                    </div>
-                  </label>
-                  <label className="field checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={formNoPeers}
-                      onChange={(e) => setFormNoPeers(e.target.checked)}
-                    />
-                    <div>
-                      <span className="field-label">
-                        Disallow transfer to peers
-                      </span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="2"
+                        placeholder="default"
+                        value={formTemp}
+                        onChange={(e) => setFormTemp(e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Top P</span>
                       <span className="field-hint">
-                        Prevent this agent from delegating to sibling agents
+                        Nucleus sampling cutoff (0-1)
                       </span>
-                    </div>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        placeholder="default"
+                        value={formTopP}
+                        onChange={(e) => setFormTopP(e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Top K</span>
+                      <span className="field-hint">
+                        Number of top tokens to consider
+                      </span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        placeholder="default"
+                        value={formTopK}
+                        onChange={(e) => setFormTopK(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span className="field-label">Max output tokens</span>
+                      <span className="field-hint">
+                        Limit response length
+                      </span>
+                      <input
+                        type="number"
+                        step="256"
+                        min="1"
+                        placeholder="default"
+                        value={formMaxTokens}
+                        onChange={(e) => setFormMaxTokens(e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Presence penalty</span>
+                      <span className="field-hint">
+                        Penalize repeated topics (-2 to 2)
+                      </span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="-2"
+                        max="2"
+                        placeholder="default"
+                        value={formPresence}
+                        onChange={(e) => setFormPresence(e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Frequency penalty</span>
+                      <span className="field-hint">
+                        Penalize repeated words (-2 to 2)
+                      </span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="-2"
+                        max="2"
+                        placeholder="default"
+                        value={formFrequency}
+                        onChange={(e) => setFormFrequency(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="field">
+                    <span className="field-label">Stop sequences</span>
+                    <span className="field-hint">
+                      Comma-separated strings that stop generation when produced
+                    </span>
+                    <input
+                      placeholder='e.g. END, ###'
+                      value={formStopSeq}
+                      onChange={(e) => setFormStopSeq(e.target.value)}
+                    />
                   </label>
+
+                  <label className="field">
+                    <span className="field-label">Output key</span>
+                    <span className="field-hint">
+                      If set, the agent's response is saved to session state under
+                      this key, making it available to other agents via{" "}
+                      {"{"} key_name {"}"}
+                    </span>
+                    <input
+                      placeholder="e.g. review_result"
+                      value={formOutputKey}
+                      onChange={(e) => setFormOutputKey(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span className="field-label">Include contents</span>
+                    <span className="field-hint">
+                      Whether to include conversation history in the LLM context.
+                      Set to "none" for stateless agents that only use the current
+                      input.
+                    </span>
+                    <select
+                      value={formInclude}
+                      onChange={(e) =>
+                        setFormInclude(e.target.value as "default" | "none")
+                      }
+                    >
+                      <option value="default">default (include history)</option>
+                      <option value="none">none (stateless)</option>
+                    </select>
+                  </label>
+
+                  <div className="field-row">
+                    <label className="field checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={formNoParent}
+                        onChange={(e) => setFormNoParent(e.target.checked)}
+                      />
+                      <div>
+                        <span className="field-label">
+                          Disallow transfer to parent
+                        </span>
+                        <span className="field-hint">
+                          Prevent this agent from escalating back to its parent
+                        </span>
+                      </div>
+                    </label>
+                    <label className="field checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={formNoPeers}
+                        onChange={(e) => setFormNoPeers(e.target.checked)}
+                      />
+                      <div>
+                        <span className="field-label">
+                          Disallow transfer to peers
+                        </span>
+                        <span className="field-hint">
+                          Prevent this agent from delegating to sibling agents
+                        </span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="form-actions">
-              <button onClick={saveAgent}>
-                {editingAgent ? "Save" : "Create"}
-              </button>
-              <button type="button" onClick={resetForm}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        <div className="agent-list">
-          {agents.map((a) => (
-            <div key={a.id} className="agent-card">
-              <div className="agent-info">
-                <h3>{a.name}</h3>
-                <p>{a.description}</p>
-                <span className="model-tag">{a.model}</span>
-              </div>
-              <div className="agent-actions">
-                <button onClick={() => editAgent(a)}>Edit</button>
-                <button onClick={() => newSession(a.id)}>Chat</button>
-                <button className="danger" onClick={() => deleteAgent(a.id)}>
-                  &times;
+              <div className="form-actions">
+                <button onClick={saveAgent}>
+                  {editingAgent ? "Save" : "Create"}
                 </button>
+                <button type="button" onClick={resetForm}>Cancel</button>
               </div>
-            </div>
-          ))}
-          {agents.length === 0 && !showForm && (
-            <p className="empty">No agents yet. Create one to get started.</p>
-          )}
-        </div>
-
-        <hr />
-        <h2>Recent sessions</h2>
-        <div className="session-list">
-          {sessions.map((s) => {
-            const agent = agents.find((a) => a.id === s.agent_id);
-            return (
-              <div
-                key={s.id}
-                className="session-item"
-                onClick={() => openSession(s.id)}
-              >
-                <span className="session-title">
-                  {s.title || "New session"}
-                </span>
-                <span className="session-agent">
-                  {agent?.name ?? s.agent_id}
-                </span>
+              {editingAgent && (
                 <button
-                  className="delete-session"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSession(s.id);
-                  }}
+                  className="danger delete-agent-btn"
+                  onClick={() => deleteAgent(editingAgent.id)}
                 >
-                  &times;
+                  Delete agent
                 </button>
-              </div>
-            );
-          })}
-          {sessions.length === 0 && (
-            <p className="empty">No sessions yet.</p>
+              )}
+            </div>
           )}
-        </div>
+
+          {centerMode === "session-edit" && editingSession && (
+            <div className="realm-edit-form">
+              <h2>Edit session</h2>
+              <label className="field">
+                <span className="field-label">Title</span>
+                <input
+                  value={sessionFormTitle}
+                  onChange={(e) => setSessionFormTitle(e.target.value)}
+                  placeholder="Session title"
+                  autoFocus
+                />
+              </label>
+              <div className="form-actions">
+                <button onClick={saveSession}>Save</button>
+                <button type="button" onClick={() => setCenterMode("welcome")}>Cancel</button>
+              </div>
+              <button
+                className="danger delete-realm-btn"
+                onClick={() => {
+                  deleteSession(editingSession.id);
+                  setEditingSession(null);
+                }}
+              >
+                Delete session
+              </button>
+            </div>
+          )}
+
+          {centerMode === "chat" && activeSession && (
+            <div className="chat-area">
+              <div className="messages">
+                {messages.map((m, i) => {
+                  const isLastAgent =
+                    m.role === "agent" && i === messages.length - 1;
+                  const useRenderer = activeAgent?.enable_ui && m.role === "agent";
+                  const showSpinner =
+                    isLastAgent && streaming && !m.content;
+                  return (
+                    <div key={i} className={`message ${m.role}`}>
+                      <span className="role-tag">{m.role}</span>
+                      <div className="content">
+                        {showSpinner ? (
+                          <span className="spinner" />
+                        ) : useRenderer ? (
+                          <Renderer
+                            response={m.content}
+                            library={openuiLibrary}
+                            isStreaming={isLastAgent && streaming}
+                          />
+                        ) : (
+                          m.content
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEnd} />
+              </div>
+              <form
+                className="input-bar"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  sendMessage();
+                }}
+              >
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Type a message..."
+                  disabled={streaming}
+                  autoFocus
+                />
+                <button type="submit" disabled={streaming || !input.trim()}>
+                  Send
+                </button>
+              </form>
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

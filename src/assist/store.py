@@ -102,6 +102,18 @@ class Store:
             return None
         return SessionMeta.model_validate_json(p.read_text())
 
+    def update_session(self, session_id: str, updates: dict) -> SessionMeta | None:
+        meta = self.get_session_meta(session_id)
+        if not meta:
+            return None
+        data = meta.model_dump(mode="json")
+        data.update({k: v for k, v in updates.items() if v is not None})
+        updated = SessionMeta.model_validate(data)
+        self._meta_path(session_id).write_text(
+            json.dumps(updated.model_dump(mode="json"), indent=2)
+        )
+        return updated
+
     def get_messages(self, session_id: str) -> list[Message]:
         p = self._messages_path(session_id)
         if not p.exists():

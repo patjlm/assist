@@ -158,6 +158,11 @@ export const api = {
       }),
     get: (realmId: string, id: string) =>
       request<SessionDetail>(`/realms/${realmId}/sessions/${id}`),
+    update: (realmId: string, id: string, body: { title?: string }) =>
+      request<SessionMeta>(`/realms/${realmId}/sessions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
     delete: (realmId: string, id: string) =>
       request<void>(`/realms/${realmId}/sessions/${id}`, { method: "DELETE" }),
   },

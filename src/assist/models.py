@@ -105,6 +105,10 @@ class SessionMeta(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class SessionUpdate(BaseModel):
+    title: str | None = None
+
+
 class SessionDetail(SessionMeta):
     messages: list[Message] = []
 

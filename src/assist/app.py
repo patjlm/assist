@@ -24,6 +24,7 @@ from .models import (
     Role,
     SessionDetail,
     SessionMeta,
+    SessionUpdate,
     UserPreferences,
 )
 from .realms import (
@@ -220,6 +221,16 @@ def get_session(session_id: str, store: RealmStore) -> SessionDetail:
         raise HTTPException(404, "session not found")
     messages = store.get_messages(session_id)
     return SessionDetail(**meta.model_dump(), messages=messages)
+
+
+@app.patch("/api/realms/{realm_id}/sessions/{session_id}")
+def update_session(
+    session_id: str, body: SessionUpdate, store: RealmStore
+) -> SessionMeta:
+    updated = store.update_session(session_id, body.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(404, "session not found")
+    return updated
 
 
 @app.delete("/api/realms/{realm_id}/sessions/{session_id}", status_code=204)
