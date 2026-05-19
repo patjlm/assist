@@ -1,4 +1,4 @@
-# aissist
+# assist
 
 Multi-agent chat platform built on [Google ADK](https://github.com/google/adk-python). Define agents through a web UI, chat with them, and optionally let them render rich UI (charts, tables, forms) via [OpenUI](https://github.com/thesysdev/openui).
 

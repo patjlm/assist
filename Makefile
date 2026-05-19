@@ -3,7 +3,7 @@
 # ── Dev servers ──
 
 backend:
-	uv run uvicorn aissist.app:app --reload --port 8000
+	uv run uvicorn assist.app:app --reload --port 8000
 
 frontend:
 	cd web && npm run dev

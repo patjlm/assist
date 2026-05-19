@@ -40,7 +40,7 @@ from .store import Store
 
 load_dotenv()
 
-app = FastAPI(title="aissist")
+app = FastAPI(title="assist")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -257,4 +257,4 @@ if web_dist.exists():
 def run():
     import uvicorn
 
-    uvicorn.run("aissist.app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("assist.app:app", host="0.0.0.0", port=8000, reload=True)

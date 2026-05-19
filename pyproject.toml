@@ -1,5 +1,5 @@
 [project]
-name = "aissist"
+name = "assist"
 version = "0.1.0"
 description = "Multi-agent platform built on Google ADK"
 requires-python = ">=3.11"
@@ -13,14 +13,14 @@ dependencies = [
 ]
 
 [project.scripts]
-aissist = "aissist.app:run"
+assist = "assist.app:run"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/aissist"]
+packages = ["src/assist"]
 
 [dependency-groups]
 dev = [

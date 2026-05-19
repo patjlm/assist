@@ -99,7 +99,7 @@ export default function App() {
     return (
       <div className="app">
         <div className="login-page">
-          <h1>aissist</h1>
+          <h1>assist</h1>
           <p className="login-subtitle">Multi-agent chat platform</p>
           <a href="/api/auth/login" className="google-login-btn">
             Sign in with Google
@@ -388,7 +388,7 @@ export default function App() {
     <div className="app">
       <div className="main-panel">
         <div className="header">
-          <h1>aissist</h1>
+          <h1>assist</h1>
           {realms.length > 1 && (
             <select
               className="realm-select"

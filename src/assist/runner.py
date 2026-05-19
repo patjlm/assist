@@ -59,12 +59,12 @@ async def run_turn(
 
     session_service = InMemorySessionService()
     session = await session_service.create_session(
-        app_name="aissist",
+        app_name="assist",
         user_id="web",
     )
 
     runner = Runner(
-        app_name="aissist",
+        app_name="assist",
         agent=agent,
         session_service=session_service,
     )

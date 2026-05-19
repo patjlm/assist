@@ -8,7 +8,7 @@ Security is a primary goal. Consider security implications (OWASP top 10, auth b
 
 ## What is this
 
-aissist is a multi-agent chat platform built on Google ADK (Agent Development Kit). Users define agents through a web UI (name, system prompt, model, generation params), then open chat sessions with them. Agents can optionally render rich UI (charts, tables, forms) via OpenUI.
+assist is a multi-agent chat platform built on Google ADK (Agent Development Kit). Users define agents through a web UI (name, system prompt, model, generation params), then open chat sessions with them. Agents can optionally render rich UI (charts, tables, forms) via OpenUI.
 
 ## Commands
 
@@ -23,7 +23,7 @@ Frontend deps: `cd web && npm install`. Python deps: `uv sync`.
 
 ## Architecture
 
-**Backend** (`src/aissist/`): FastAPI app with REST endpoints for CRUD on agents and sessions, plus an SSE streaming endpoint for chat.
+**Backend** (`src/assist/`): FastAPI app with REST endpoints for CRUD on agents and sessions, plus an SSE streaming endpoint for chat.
 
 - `app.py` — routes and FastAPI app. Chat endpoint streams via SSE.
 - `runner.py` — creates an ADK `LlmAgent` from an `AgentDefinition`, replays conversation history into the session, runs one turn, yields text chunks. If `enable_ui` is on, the OpenUI system prompt is prepended to the agent instruction.

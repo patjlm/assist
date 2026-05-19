@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/auth")
 
 _SECRET_KEY = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 _SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
-_COOKIE_NAME = "aissist_session"
+_COOKIE_NAME = "assist_session"
+_BASE_URL = os.environ.get("BASE_URL", "")
 
 _signer = URLSafeTimedSerializer(_SECRET_KEY)
 
@@ -49,7 +50,10 @@ async def me(request: Request) -> JSONResponse:
 
 @router.get("/login")
 async def login(request: Request) -> Response:
-    redirect_uri = str(request.url_for("auth_callback"))
+    if _BASE_URL:
+        redirect_uri = f"{_BASE_URL}/api/auth/callback"
+    else:
+        redirect_uri = str(request.url_for("auth_callback"))
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
@@ -63,7 +67,7 @@ async def callback(request: Request) -> Response:
         "picture": userinfo.get("picture", ""),
     }
     signed = _signer.dumps(user_data)
-    response = RedirectResponse(url="/")
+    response = RedirectResponse(url=f"{_BASE_URL}/")
     response.set_cookie(
         _COOKIE_NAME,
         signed,
