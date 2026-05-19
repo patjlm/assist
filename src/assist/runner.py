@@ -12,6 +12,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from .models import AgentDefinition, Message, Role
+from .preferences import list_users
 
 
 def _build_generate_config(
@@ -38,6 +39,7 @@ async def run_turn(
     history: list[Message],
     user_message: str,
     ui_prompt: str = "",
+    sender_email: str = "",
 ) -> AsyncIterator[str]:
     """Run one conversation turn. Yields text chunks as they arrive."""
     instruction = agent_def.system_prompt
@@ -69,17 +71,40 @@ async def run_turn(
         session_service=session_service,
     )
 
+    users_by_email = {u["email"]: u.get("name", u["email"]) for u in list_users()}
+
+    def _format_user_text(msg: Message) -> str:
+        if msg.actor_id:
+            name = users_by_email.get(msg.actor_id, msg.actor_id)
+            return f"[{name}]: {msg.content}"
+        return msg.content
+
+    multi_user_note = (
+        "User messages are prefixed with [Name] to identify the speaker. "
+        "Address participants by name when relevant. "
+        "Do NOT prefix your own replies with [Name].\n\n"
+    )
+    base = agent.instruction if isinstance(agent.instruction, str) else ""
+    agent.instruction = multi_user_note + base
+
     for msg in history:
         role = "user" if msg.role == Role.USER else "model"
+        text = _format_user_text(msg) if msg.role == Role.USER else msg.content
         content = types.Content(
             role=role,
-            parts=[types.Part.from_text(text=msg.content)],
+            parts=[types.Part.from_text(text=text)],
         )
         session.events.append(Event(author=role, content=content))
 
     new_message = types.Content(
         role="user",
-        parts=[types.Part.from_text(text=user_message)],
+        parts=[
+            types.Part.from_text(
+                text=_format_user_text(
+                    Message(role=Role.USER, content=user_message, actor_id=sender_email)
+                )
+            )
+        ],
     )
 
     async for event in runner.run_async(

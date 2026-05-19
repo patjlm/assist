@@ -46,6 +46,7 @@ export interface SessionMeta {
   id: string;
   agent_id: string;
   title: string;
+  muted: boolean;
   schedule_id: string | null;
   created_at: string;
   updated_at: string;
@@ -130,6 +131,9 @@ export const api = {
     },
     logout: () => request<void>("/auth/logout", { method: "POST" }),
   },
+  users: {
+    list: () => request<User[]>("/users"),
+  },
   preferences: {
     get: () => request<UserPreferences>("/preferences"),
     update: (prefs: UserPreferences) =>
@@ -140,13 +144,13 @@ export const api = {
   },
   realms: {
     list: () => request<Realm[]>("/realms"),
-    create: (name: string) =>
+    create: (name: string, members?: string[]) =>
       request<Realm>("/realms", {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, members: members ?? [] }),
       }),
     get: (id: string) => request<Realm>(`/realms/${id}`),
-    update: (id: string, body: { name?: string }) =>
+    update: (id: string, body: { name?: string; members?: string[] }) =>
       request<Realm>(`/realms/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -185,7 +189,7 @@ export const api = {
       }),
     get: (realmId: string, id: string) =>
       request<SessionDetail>(`/realms/${realmId}/sessions/${id}`),
-    update: (realmId: string, id: string, body: { title?: string }) =>
+    update: (realmId: string, id: string, body: { title?: string; muted?: boolean }) =>
       request<SessionMeta>(`/realms/${realmId}/sessions/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -214,6 +218,46 @@ export const api = {
       request<{ session_id: string | null }>(`/realms/${realmId}/schedules/${id}/run`, {
         method: "POST",
       }),
+  },
+  realmEvents: (
+    realmId: string,
+    onEvent: (event: { type: string; session_id?: string }) => void
+  ): (() => void) => {
+    const controller = new AbortController();
+    (async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const res = await fetch(`${BASE}/realms/${realmId}/events`, {
+            credentials: "same-origin",
+            signal: controller.signal,
+          });
+          if (!res.ok) break;
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop()!;
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                onEvent(JSON.parse(line.slice(6)));
+              } catch {
+                // skip malformed events
+              }
+            }
+          }
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        // reconnect after a short delay
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    })();
+    return () => controller.abort();
   },
   chat: async function* (
     realmId: string,

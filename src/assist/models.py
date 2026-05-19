@@ -19,6 +19,12 @@ class Realm(BaseModel):
 
 class RealmCreate(BaseModel):
     name: str
+    members: list[str] = Field(default_factory=list)
+
+
+class RealmUpdate(BaseModel):
+    name: str | None = None
+    members: list[str] | None = None
 
 
 class AgentDefinition(BaseModel):
@@ -102,6 +108,7 @@ class SessionMeta(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     agent_id: str
     title: str = ""
+    muted: bool = False
     schedule_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -109,6 +116,7 @@ class SessionMeta(BaseModel):
 
 class SessionUpdate(BaseModel):
     title: str | None = None
+    muted: bool | None = None
 
 
 class SessionDetail(SessionMeta):

@@ -8,7 +8,10 @@ interface ChatAreaProps {
   streaming: boolean;
   activeAgent: Agent | null;
   user: User;
+  usersByEmail: Map<string, User>;
+  muted: boolean;
   onSend: (text: string) => void;
+  onToggleMute: () => void;
 }
 
 export default function ChatArea({
@@ -16,7 +19,10 @@ export default function ChatArea({
   streaming,
   activeAgent,
   user,
+  usersByEmail,
+  muted,
   onSend,
+  onToggleMute,
 }: ChatAreaProps) {
   const [input, setInput] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
@@ -39,16 +45,21 @@ export default function ChatArea({
           const isLastAgent = m.role === "agent" && i === messages.length - 1;
           const useRenderer = activeAgent?.enable_ui && m.role === "agent";
           const showSpinner = isLastAgent && streaming && !m.content;
+          const author = m.role === "user" && m.actor_id
+            ? usersByEmail.get(m.actor_id) ?? user
+            : user;
           return (
             <div key={i} className={`message ${m.role}`}>
               <div className="message-header">
                 {m.role === "user" ? (
-                  <img className="message-avatar" src={user.picture} alt="" referrerPolicy="no-referrer" />
+                  author.picture
+                    ? <img className="message-avatar" src={author.picture} alt="" referrerPolicy="no-referrer" />
+                    : <span className="message-avatar agent-avatar" aria-hidden="true">&#x1F464;</span>
                 ) : (
                   <span className="message-avatar agent-avatar" aria-hidden="true">&#x1F916;</span>
                 )}
                 <span className="message-name">
-                  {m.role === "user" ? user.name : (activeAgent?.name ?? "Agent")}
+                  {m.role === "user" ? (author.name || author.email) : (activeAgent?.name ?? "Agent")}
                 </span>
                 {m.timestamp && (
                   <time className="message-time" dateTime={m.timestamp}>
@@ -78,10 +89,19 @@ export default function ChatArea({
         <div ref={messagesEnd} />
       </div>
       <form className="input-bar" onSubmit={handleSubmit}>
+        <button
+          type="button"
+          className={`mute-btn${muted ? " muted" : ""}`}
+          onClick={onToggleMute}
+          aria-label={muted ? "Unmute agent" : "Mute agent"}
+          title={muted ? "Agent is muted — click to unmute" : "Mute agent"}
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message..."
+          placeholder={muted ? "Chat with other users..." : "Type a message..."}
           disabled={streaming}
           aria-label="Message input"
           autoFocus

@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .preferences import save_profile
+
 router = APIRouter(prefix="/api/auth")
 
 _SECRET_KEY = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
@@ -74,6 +76,7 @@ async def callback(request: Request) -> Response:
         "name": userinfo.get("name", ""),
         "picture": userinfo.get("picture", ""),
     }
+    save_profile(user_data)
     signed = _signer.dumps(user_data)
     origin = request.session.pop("login_origin", "")
     response = RedirectResponse(url=f"{origin}/")

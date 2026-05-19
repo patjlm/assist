@@ -66,8 +66,14 @@ def update_realm(realm_id: str, updates: dict) -> Realm | None:
     if not realm:
         return None
     data = realm.model_dump(mode="json")
-    allowed = {"name"}
-    data.update({k: v for k, v in updates.items() if k in allowed and v is not None})
+    allowed = {"name", "members"}
+    for k, v in updates.items():
+        if k not in allowed:
+            continue
+        if k == "members" and v is not None:
+            data[k] = v
+        elif v is not None:
+            data[k] = v
     updated = Realm.model_validate(data)
     _realm_file(realm_id).write_text(
         json.dumps(updated.model_dump(mode="json"), indent=2)

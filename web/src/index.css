@@ -376,6 +376,127 @@ select:focus { border-color: var(--accent); }
   width: 100%;
 }
 
+/* ── Members section ── */
+
+.members-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.member-owner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.owner-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  margin-left: auto;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.member-email {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-member {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.remove-member:hover { color: var(--danger); background: none; }
+
+.member-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.add-member-row {
+  display: flex;
+  gap: 8px;
+  position: relative;
+}
+.add-member-row input { flex: 1; }
+
+.member-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  z-index: 100;
+}
+
+.member-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  padding: 8px 12px;
+  background: none;
+  font-size: 13px;
+  color: var(--text);
+}
+.member-suggestion:hover { background: var(--bg-hover); }
+
+.suggestion-name {
+  font-weight: 500;
+  color: var(--text-bright);
+}
+
+.suggestion-email {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.suggestion-empty {
+  padding: 8px 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* ── Agent form ── */
 
 .agent-form {
@@ -611,6 +732,17 @@ select:focus { border-color: var(--accent); }
   flex-shrink: 0;
 }
 .input-bar button:hover { background: var(--accent-hover); }
+
+.mute-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+.mute-btn:hover { background: var(--bg-hover); }
+.mute-btn.muted { border-color: var(--danger); }
 
 /* ── Spinner ── */
 

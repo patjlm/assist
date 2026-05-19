@@ -25,6 +25,7 @@ from .models import (
     Message,
     Realm,
     RealmCreate,
+    RealmUpdate,
     Role,
     ScheduleCreate,
     ScheduleDefinition,
@@ -44,7 +45,8 @@ from .realms import (
     update_realm,
     validate_realm_id,
 )
-from .preferences import get_preferences, set_preferences
+from .events import bus
+from .preferences import get_preferences, list_users, set_preferences
 from .runner import run_turn
 from .scheduler import compute_next_run, _execute_schedule, scheduler_loop
 from .store import Store
@@ -92,6 +94,28 @@ def get_realm_store(
 
 RealmStore = Annotated[Store, Depends(get_realm_store)]
 
+
+def _validate_members(members: list[str], owner_email: str) -> list[str]:
+    """Validate and deduplicate member emails. Raises HTTPException on error."""
+    import re
+
+    email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for m in members:
+        m = m.strip().lower()
+        if not m:
+            continue
+        if not email_re.match(m):
+            raise HTTPException(400, f"invalid email: {m}")
+        if m == owner_email.lower():
+            continue
+        if m not in seen:
+            cleaned.append(m)
+            seen.add(m)
+    return cleaned
+
+
 # ── Realms ──
 
 
@@ -106,7 +130,8 @@ def create_realm_route(body: RealmCreate, user: User) -> Realm:
     existing = list_realms_for_user(user["email"])
     if any(r.name == body.name for r in existing):
         raise HTTPException(409, "a realm with that name already exists")
-    realm = Realm(name=body.name, owner_email=user["email"])
+    members = _validate_members(body.members, user["email"])
+    realm = Realm(name=body.name, owner_email=user["email"], members=members)
     return create_realm(realm)
 
 
@@ -125,7 +150,7 @@ def get_realm_route(realm_id: str, user: User) -> Realm:
 
 
 @app.patch("/api/realms/{realm_id}")
-def update_realm_route(realm_id: str, body: dict, user: User) -> Realm:
+def update_realm_route(realm_id: str, body: RealmUpdate, user: User) -> Realm:
     try:
         validate_realm_id(realm_id)
     except ValueError:
@@ -135,12 +160,14 @@ def update_realm_route(realm_id: str, body: dict, user: User) -> Realm:
         raise HTTPException(404, "realm not found")
     if realm.owner_email != user["email"]:
         raise HTTPException(403, "only owner can update realm")
-    new_name = body.get("name")
-    if new_name is not None:
+    updates = body.model_dump(exclude_unset=True)
+    if "name" in updates and updates["name"] is not None:
         existing = list_realms_for_user(user["email"])
-        if any(r.name == new_name and r.id != realm_id for r in existing):
+        if any(r.name == updates["name"] and r.id != realm_id for r in existing):
             raise HTTPException(409, "a realm with that name already exists")
-    updated = update_realm(realm_id, body)
+    if "members" in updates and updates["members"] is not None:
+        updates["members"] = _validate_members(updates["members"], realm.owner_email)
+    updated = update_realm(realm_id, updates)
     if not updated:
         raise HTTPException(404, "realm not found")
     return updated
@@ -160,6 +187,14 @@ def delete_realm_route(realm_id: str, user: User) -> None:
     if realm.owner_email != user["email"]:
         raise HTTPException(403, "only owner can delete realm")
     delete_realm(realm_id)
+
+
+# ── Users ──
+
+
+@app.get("/api/users")
+def list_users_route(user: User) -> list[dict]:
+    return list_users()
 
 
 # ── User preferences ──
@@ -192,16 +227,20 @@ def get_agent(agent_id: str, store: RealmStore) -> AgentDefinition:
 
 
 @app.post("/api/realms/{realm_id}/agents", status_code=201)
-def create_agent(body: AgentCreate, store: RealmStore) -> AgentDefinition:
+def create_agent(
+    realm_id: str, body: AgentCreate, store: RealmStore
+) -> AgentDefinition:
     if any(a.name == body.name for a in store.list_agents()):
         raise HTTPException(409, "an agent with that name already exists")
     agent = AgentDefinition(**body.model_dump())
-    return store.create_agent(agent)
+    created = store.create_agent(agent)
+    bus.publish(realm_id, "agents_changed")
+    return created
 
 
 @app.patch("/api/realms/{realm_id}/agents/{agent_id}")
 def update_agent(
-    agent_id: str, body: AgentUpdate, store: RealmStore
+    realm_id: str, agent_id: str, body: AgentUpdate, store: RealmStore
 ) -> AgentDefinition:
     updates = body.model_dump(exclude_unset=True)
     if "name" in updates:
@@ -212,6 +251,7 @@ def update_agent(
     agent = store.update_agent(agent_id, updates)
     if not agent:
         raise HTTPException(404, "agent not found")
+    bus.publish(realm_id, "agents_changed")
     return agent
 
 
@@ -223,11 +263,13 @@ def agent_session_count(agent_id: str, store: RealmStore) -> dict:
 
 
 @app.delete("/api/realms/{realm_id}/agents/{agent_id}", status_code=204)
-def delete_agent(agent_id: str, store: RealmStore) -> None:
+def delete_agent(realm_id: str, agent_id: str, store: RealmStore) -> None:
     if not store.delete_agent(agent_id):
         raise HTTPException(404, "agent not found")
     store.delete_sessions_for_agent(agent_id)
     store.delete_schedules_for_agent(agent_id)
+    bus.publish(realm_id, "agents_changed")
+    bus.publish(realm_id, "sessions_changed")
 
 
 # ── Sessions ──
@@ -239,12 +281,14 @@ def list_sessions(store: RealmStore, agent_id: str | None = None) -> list[Sessio
 
 
 @app.post("/api/realms/{realm_id}/sessions", status_code=201)
-def create_session(body: dict, store: RealmStore) -> SessionMeta:
+def create_session(realm_id: str, body: dict, store: RealmStore) -> SessionMeta:
     agent_id = body.get("agent_id")
     if not agent_id or not store.get_agent(agent_id):
         raise HTTPException(400, "valid agent_id required")
     meta = SessionMeta(agent_id=agent_id)
-    return store.create_session(meta)
+    created = store.create_session(meta)
+    bus.publish(realm_id, "sessions_changed")
+    return created
 
 
 @app.get("/api/realms/{realm_id}/sessions/{session_id}")
@@ -258,18 +302,20 @@ def get_session(session_id: str, store: RealmStore) -> SessionDetail:
 
 @app.patch("/api/realms/{realm_id}/sessions/{session_id}")
 def update_session(
-    session_id: str, body: SessionUpdate, store: RealmStore
+    realm_id: str, session_id: str, body: SessionUpdate, store: RealmStore
 ) -> SessionMeta:
     updated = store.update_session(session_id, body.model_dump(exclude_none=True))
     if not updated:
         raise HTTPException(404, "session not found")
+    bus.publish(realm_id, "sessions_changed")
     return updated
 
 
 @app.delete("/api/realms/{realm_id}/sessions/{session_id}", status_code=204)
-def delete_session(session_id: str, store: RealmStore) -> None:
+def delete_session(realm_id: str, session_id: str, store: RealmStore) -> None:
     if not store.delete_session(session_id):
         raise HTTPException(404, "session not found")
+    bus.publish(realm_id, "sessions_changed")
 
 
 # ── Schedules ──
@@ -345,12 +391,39 @@ async def run_schedule(schedule_id: str, store: RealmStore) -> dict:
     return {"session_id": sched.last_session_id if sched else None}
 
 
+# ── Realm events (SSE) ──
+
+
+@app.get("/api/realms/{realm_id}/events")
+async def realm_events(realm_id: str, user: User) -> StreamingResponse:
+    try:
+        validate_realm_id(realm_id)
+    except ValueError:
+        raise HTTPException(400, "invalid realm id")
+    if not check_access(realm_id, user["email"]):
+        raise HTTPException(403, "access denied")
+
+    q = bus.subscribe(realm_id)
+
+    async def stream():
+        try:
+            while True:
+                payload = await q.get()
+                if payload is None:
+                    break
+                yield f"data: {payload}\n\n"
+        finally:
+            bus.unsubscribe(realm_id, q)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 # ── Chat (SSE) ──
 
 
 @app.post("/api/realms/{realm_id}/sessions/{session_id}/chat")
 async def chat(
-    session_id: str, body: dict, user: User, store: RealmStore
+    realm_id: str, session_id: str, body: dict, user: User, store: RealmStore
 ) -> StreamingResponse:
     prompt = body.get("message", "").strip()
     if not prompt:
@@ -368,13 +441,27 @@ async def chat(
 
     user_msg = Message(role=Role.USER, content=prompt, actor_id=user["email"])
     store.append_message(session_id, user_msg)
+    bus.publish(realm_id, "session_message", {"session_id": session_id})
+    bus.publish(realm_id, "sessions_changed")
+
+    if meta.muted:
+
+        async def muted_stream():
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(muted_stream(), media_type="text/event-stream")
+
     history = store.get_messages(session_id)
 
     async def event_stream():
         full_response = []
         try:
             async for chunk in run_turn(
-                agent_def, history[:-1], prompt, ui_prompt=ui_prompt
+                agent_def,
+                history[:-1],
+                prompt,
+                ui_prompt=ui_prompt,
+                sender_email=user["email"],
             ):
                 full_response.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
@@ -386,6 +473,8 @@ async def chat(
                 role=Role.AGENT, content="".join(full_response), actor_id=meta.agent_id
             )
             store.append_message(session_id, agent_msg)
+        bus.publish(realm_id, "session_message", {"session_id": session_id})
+        bus.publish(realm_id, "sessions_changed")
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

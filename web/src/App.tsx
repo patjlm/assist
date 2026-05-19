@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openuiLibrary, openuiPromptOptions } from "@openuidev/react-ui";
 import "@openuidev/react-ui/components.css";
 import "@openuidev/react-ui/defaults.css";
@@ -15,6 +15,7 @@ import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import AgentForm from "./AgentForm";
+import MemberPicker from "./MemberPicker";
 
 type CenterMode =
   | "welcome"
@@ -39,10 +40,19 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>("dark");
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [realmEditName, setRealmEditName] = useState("");
+  const [realmEditMembers, setRealmEditMembers] = useState<string[]>([]);
   const [realmCreateName, setRealmCreateName] = useState("");
+  const [realmCreateMembers, setRealmCreateMembers] = useState<string[]>([]);
   const [editingSession, setEditingSession] = useState<SessionMeta | null>(null);
   const [sessionFormTitle, setSessionFormTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [usersByEmail, setUsersByEmail] = useState<Map<string, User>>(new Map());
+
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
+
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
 
   const uiPrompt = useMemo(
     () => openuiLibrary.prompt(openuiPromptOptions),
@@ -68,12 +78,14 @@ export default function App() {
       setUser(u);
       setAuthChecked(true);
       if (u) {
-        const [realmList, prefs] = await Promise.all([
+        const [realmList, prefs, allUsers] = await Promise.all([
           api.realms.list(),
           api.preferences.get(),
+          api.users.list(),
         ]);
         setRealms(realmList);
         setTheme(prefs.theme);
+        setUsersByEmail(new Map(allUsers.map((u) => [u.email, u])));
         const personal = realmList.find((r) => r.personal) ?? realmList[0];
         if (personal) setActiveRealm(personal);
       }
@@ -84,6 +96,30 @@ export default function App() {
     if (!activeRealm) return;
     api.agents.list(activeRealm.id).then(setAgents);
     api.sessions.list(activeRealm.id).then(setSessions);
+  }, [activeRealm]);
+
+  useEffect(() => {
+    if (!activeRealm) return;
+    const realmId = activeRealm.id;
+    const unsub = api.realmEvents(realmId, (event) => {
+      if (event.type === "agents_changed") {
+        api.agents.list(realmId).then(setAgents);
+      }
+      if (event.type === "sessions_changed") {
+        api.sessions.list(realmId).then(setSessions);
+      }
+      if (
+        event.type === "session_message" &&
+        event.session_id &&
+        event.session_id === activeSessionRef.current &&
+        !streamingRef.current
+      ) {
+        api.sessions.get(realmId, event.session_id).then((detail) => {
+          setMessages(detail.messages);
+        });
+      }
+    });
+    return unsub;
   }, [activeRealm]);
 
   if (!authChecked) {
@@ -139,6 +175,7 @@ export default function App() {
 
   async function sendMessage(text: string) {
     if (!activeSession || streaming) return;
+    const currentMuted = sessions.find((s) => s.id === activeSession)?.muted ?? false;
     const userMsg: Message = {
       role: "user",
       content: text,
@@ -147,12 +184,14 @@ export default function App() {
     setMessages((prev) => [...prev, userMsg]);
     setStreaming(true);
 
-    const agentMsg: Message = {
-      role: "agent",
-      content: "",
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, agentMsg]);
+    if (!currentMuted) {
+      const agentMsg: Message = {
+        role: "agent",
+        content: "",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, agentMsg]);
+    }
 
     try {
       const uiArg = activeAgent?.enable_ui ? uiPrompt : undefined;
@@ -168,14 +207,16 @@ export default function App() {
         });
       }
     } catch (e) {
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: `Error: ${e}`,
-        };
-        return updated;
-      });
+      if (!currentMuted) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: `Error: ${e}`,
+          };
+          return updated;
+        });
+      }
     }
     setStreaming(false);
     loadSessions();
@@ -210,13 +251,17 @@ export default function App() {
   function openRealmEdit() {
     if (!activeRealm) return;
     setRealmEditName(activeRealm.name);
+    setRealmEditMembers([...activeRealm.members]);
     setCenterMode("realm-edit");
   }
 
   async function saveRealm() {
     if (!activeRealm || !realmEditName.trim()) return;
     try {
-      await api.realms.update(activeRealm.id, { name: realmEditName.trim() });
+      await api.realms.update(activeRealm.id, {
+        name: realmEditName.trim(),
+        members: realmEditMembers,
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
       return;
@@ -243,7 +288,7 @@ export default function App() {
     if (!realmCreateName.trim()) return;
     let created: Realm;
     try {
-      created = await api.realms.create(realmCreateName.trim());
+      created = await api.realms.create(realmCreateName.trim(), realmCreateMembers);
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
       return;
@@ -253,6 +298,7 @@ export default function App() {
     const newRealm = realmList.find((r) => r.id === created.id);
     if (newRealm) setActiveRealm(newRealm);
     setRealmCreateName("");
+    setRealmCreateMembers([]);
     setCenterMode("welcome");
   }
 
@@ -269,6 +315,7 @@ export default function App() {
         }}
         onNewRealm={() => {
           setRealmCreateName("");
+          setRealmCreateMembers([]);
           setCenterMode("realm-create");
         }}
         onEditRealm={openRealmEdit}
@@ -322,6 +369,13 @@ export default function App() {
                   placeholder="Realm name"
                 />
               </label>
+              {!activeRealm.personal && (
+                <MemberPicker
+                  members={realmEditMembers}
+                  ownerEmail={activeRealm.owner_email}
+                  onChange={setRealmEditMembers}
+                />
+              )}
               <div className="form-actions">
                 <button onClick={saveRealm}>Save</button>
                 <button type="button" onClick={() => setCenterMode("welcome")}>Cancel</button>
@@ -346,6 +400,11 @@ export default function App() {
                   autoFocus
                 />
               </label>
+              <MemberPicker
+                members={realmCreateMembers}
+                ownerEmail={user?.email}
+                onChange={setRealmCreateMembers}
+              />
               <div className="form-actions">
                 <button onClick={createRealm}>Create</button>
                 <button type="button" onClick={() => setCenterMode("welcome")}>Cancel</button>
@@ -411,7 +470,17 @@ export default function App() {
               streaming={streaming}
               activeAgent={activeAgent}
               user={user}
+              usersByEmail={usersByEmail}
+              muted={sessions.find((s) => s.id === activeSession)?.muted ?? false}
               onSend={sendMessage}
+              onToggleMute={async () => {
+                const current = sessions.find((s) => s.id === activeSession);
+                if (!current) return;
+                await api.sessions.update(activeRealm!.id, activeSession, {
+                  muted: !current.muted,
+                });
+                loadSessions();
+              }}
             />
           )}
         </main>
