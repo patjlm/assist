@@ -101,6 +101,7 @@ class SessionMeta(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     agent_id: str
     title: str = ""
+    schedule_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -111,6 +112,36 @@ class SessionUpdate(BaseModel):
 
 class SessionDetail(SessionMeta):
     messages: list[Message] = []
+
+
+class ScheduleDefinition(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    agent_id: str
+    prompt: str
+    enabled: bool = True
+    one_time: bool = False
+    interval_seconds: int | None = None
+    cron_expression: str | None = None
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    last_session_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ScheduleCreate(BaseModel):
+    prompt: str
+    enabled: bool = True
+    one_time: bool = False
+    interval_seconds: int | None = None
+    cron_expression: str | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    prompt: str | None = None
+    enabled: bool | None = None
+    one_time: bool | None = None
+    interval_seconds: int | None = None
+    cron_expression: str | None = None
 
 
 class UserPreferences(BaseModel):

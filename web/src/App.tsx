@@ -6,7 +6,7 @@ import {
 } from "@openuidev/react-ui";
 import "@openuidev/react-ui/components.css";
 import "@openuidev/react-ui/defaults.css";
-import { api, type Agent, type SessionMeta, type Message, type User, type Realm, type Theme } from "./api";
+import { api, type Agent, type SessionMeta, type Message, type User, type Realm, type Theme, type Schedule } from "./api";
 
 type CenterMode = "welcome" | "chat" | "agent-form" | "session-edit" | "realm-edit" | "realm-create";
 
@@ -50,6 +50,16 @@ export default function App() {
   const [realmCreateName, setRealmCreateName] = useState("");
   const [editingSession, setEditingSession] = useState<SessionMeta | null>(null);
   const [sessionFormTitle, setSessionFormTitle] = useState("");
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+  const [schedPrompt, setSchedPrompt] = useState("");
+  const [schedEnabled, setSchedEnabled] = useState(true);
+  const [schedOneTime, setSchedOneTime] = useState(false);
+  const [schedIntervalValue, setSchedIntervalValue] = useState("1");
+  const [schedIntervalUnit, setSchedIntervalUnit] = useState("hours");
+  const [schedUseCron, setSchedUseCron] = useState(false);
+  const [schedCron, setSchedCron] = useState("");
 
   const messagesEnd = useRef<HTMLDivElement>(null);
 
@@ -242,6 +252,8 @@ export default function App() {
     setFormSessionTtl("");
     setEditingAgent(null);
     setShowAdvanced(false);
+    setSchedules([]);
+    resetScheduleForm();
     setCenterMode("welcome");
   }
 
@@ -270,6 +282,8 @@ export default function App() {
     setEditingAgent(a);
     populateForm(a);
     setCenterMode("agent-form");
+    resetScheduleForm();
+    loadSchedules(a.id);
   }
 
   function collectFormData() {
@@ -301,10 +315,15 @@ export default function App() {
 
   async function saveAgent() {
     if (!formName.trim() || !formPrompt.trim()) return;
-    if (editingAgent) {
-      await api.agents.update(activeRealm!.id, editingAgent.id, collectFormData());
-    } else {
-      await api.agents.create(activeRealm!.id, collectFormData());
+    try {
+      if (editingAgent) {
+        await api.agents.update(activeRealm!.id, editingAgent.id, collectFormData());
+      } else {
+        await api.agents.create(activeRealm!.id, collectFormData());
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      return;
     }
     resetForm();
     loadAgents();
@@ -336,6 +355,96 @@ export default function App() {
     loadSessions();
   }
 
+  async function loadSchedules(agentId: string) {
+    if (!activeRealm) return;
+    setSchedules(await api.schedules.list(activeRealm.id, agentId));
+  }
+
+  function resetScheduleForm() {
+    setShowScheduleForm(false);
+    setEditingSchedule(null);
+    setSchedPrompt("");
+    setSchedEnabled(true);
+    setSchedOneTime(false);
+    setSchedIntervalValue("1");
+    setSchedIntervalUnit("hours");
+    setSchedUseCron(false);
+    setSchedCron("");
+  }
+
+  function intervalToSeconds(value: string, unit: string): number {
+    const n = parseInt(value, 10) || 1;
+    if (unit === "days") return n * 86400;
+    if (unit === "weeks") return n * 604800;
+    return n * 3600;
+  }
+
+  async function saveSchedule() {
+    if (!activeRealm || !editingAgent || !schedPrompt.trim()) return;
+    const body = {
+      prompt: schedPrompt,
+      enabled: schedEnabled,
+      one_time: schedOneTime,
+      interval_seconds: schedUseCron ? undefined : intervalToSeconds(schedIntervalValue, schedIntervalUnit),
+      cron_expression: schedUseCron ? schedCron : undefined,
+    };
+    try {
+      if (editingSchedule) {
+        await api.schedules.update(activeRealm.id, editingSchedule.id, body);
+      } else {
+        await api.schedules.create(activeRealm.id, editingAgent.id, body);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    resetScheduleForm();
+    loadSchedules(editingAgent.id);
+  }
+
+  async function deleteSchedule(id: string) {
+    if (!activeRealm || !editingAgent) return;
+    await api.schedules.delete(activeRealm.id, id);
+    loadSchedules(editingAgent.id);
+  }
+
+  async function toggleScheduleEnabled(sched: Schedule) {
+    if (!activeRealm || !editingAgent) return;
+    await api.schedules.update(activeRealm.id, sched.id, { enabled: !sched.enabled });
+    loadSchedules(editingAgent.id);
+  }
+
+  async function runScheduleNow(schedId: string) {
+    if (!activeRealm || !editingAgent) return;
+    const { session_id } = await api.schedules.run(activeRealm.id, schedId);
+    loadSchedules(editingAgent.id);
+    loadSessions();
+    if (session_id) openSession(session_id);
+  }
+
+  function startEditSchedule(sched: Schedule) {
+    setEditingSchedule(sched);
+    setSchedPrompt(sched.prompt);
+    setSchedEnabled(sched.enabled);
+    setSchedOneTime(sched.one_time);
+    if (sched.cron_expression) {
+      setSchedUseCron(true);
+      setSchedCron(sched.cron_expression);
+    } else {
+      setSchedUseCron(false);
+      const secs = sched.interval_seconds ?? 3600;
+      if (secs % 604800 === 0) { setSchedIntervalValue(String(secs / 604800)); setSchedIntervalUnit("weeks"); }
+      else if (secs % 86400 === 0) { setSchedIntervalValue(String(secs / 86400)); setSchedIntervalUnit("days"); }
+      else { setSchedIntervalValue(String(secs / 3600)); setSchedIntervalUnit("hours"); }
+    }
+    setShowScheduleForm(true);
+  }
+
+  function formatScheduleTime(iso: string | null): string {
+    if (!iso) return "-";
+    return new Date(iso).toLocaleString();
+  }
+
   function editSession(s: SessionMeta) {
     setEditingSession(s);
     setSessionFormTitle(s.title);
@@ -364,7 +473,12 @@ export default function App() {
 
   async function saveRealm() {
     if (!activeRealm || !realmEditName.trim()) return;
-    await api.realms.update(activeRealm.id, { name: realmEditName.trim() });
+    try {
+      await api.realms.update(activeRealm.id, { name: realmEditName.trim() });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     const realmList = await api.realms.list();
     setRealms(realmList);
     const updated = realmList.find((r) => r.id === activeRealm.id);
@@ -385,7 +499,13 @@ export default function App() {
 
   async function createRealm() {
     if (!realmCreateName.trim()) return;
-    const created = await api.realms.create(realmCreateName.trim());
+    let created: Realm;
+    try {
+      created = await api.realms.create(realmCreateName.trim());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     const realmList = await api.realms.list();
     setRealms(realmList);
     const newRealm = realmList.find((r) => r.id === created.id);
@@ -402,6 +522,12 @@ export default function App() {
             className="realm-select"
             value={activeRealm?.id ?? ""}
             onChange={(e) => {
+              if (e.target.value === "__new__") {
+                setRealmCreateName("");
+                setCenterMode("realm-create");
+                e.target.value = activeRealm?.id ?? "";
+                return;
+              }
               const r = realms.find((r) => r.id === e.target.value);
               if (r) {
                 setActiveRealm(r);
@@ -414,17 +540,11 @@ export default function App() {
                 {r.name}{r.personal ? " (personal)" : ""}
               </option>
             ))}
+            <option disabled>───────────</option>
+            <option value="__new__">+ New realm...</option>
           </select>
           <button className="icon-btn" onClick={openRealmEdit} title="Edit realm">
             Edit
-          </button>
-          <button
-            onClick={() => {
-              setRealmCreateName("");
-              setCenterMode("realm-create");
-            }}
-          >
-            New
           </button>
         </div>
         <div className="top-bar-right">
@@ -882,6 +1002,122 @@ export default function App() {
                 >
                   Delete agent
                 </button>
+              )}
+
+              {editingAgent && (
+                <div className="schedule-section">
+                  <h3>Schedules</h3>
+                  {schedules.length > 0 && (
+                    <div className="schedule-list">
+                      {schedules.map((sched) => (
+                        <div key={sched.id} className="schedule-item">
+                          <span className={`schedule-status${sched.enabled ? " active" : ""}`} />
+                          <div className="schedule-info">
+                            <div className="schedule-prompt">{sched.prompt}</div>
+                            <div className="schedule-meta">
+                              Next: {formatScheduleTime(sched.next_run_at)}
+                              {sched.last_run_at && (
+                                <> &middot; Last: {formatScheduleTime(sched.last_run_at)}</>
+                              )}
+                              {sched.last_session_id && (
+                                <> &middot; <a onClick={() => openSession(sched.last_session_id!)}>view session</a></>
+                              )}
+                              {sched.one_time && <> &middot; one-time</>}
+                            </div>
+                          </div>
+                          <div className="schedule-actions">
+                            <button onClick={() => toggleScheduleEnabled(sched)}>
+                              {sched.enabled ? "Disable" : "Enable"}
+                            </button>
+                            <button onClick={() => runScheduleNow(sched.id)}>Run now</button>
+                            <button onClick={() => startEditSchedule(sched)}>Edit</button>
+                            <button className="danger" onClick={() => deleteSchedule(sched.id)}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!showScheduleForm && (
+                    <button onClick={() => { resetScheduleForm(); setShowScheduleForm(true); }}>
+                      + Add schedule
+                    </button>
+                  )}
+                  {showScheduleForm && (
+                    <div className="schedule-form">
+                      <label className="field">
+                        <span className="field-label">Prompt</span>
+                        <span className="field-hint">
+                          Template variables: {"{{now}}"}, {"{{date}}"}, {"{{time}}"}, {"{{day_of_week}}"}, {"{{iso_date}}"}
+                        </span>
+                        <textarea
+                          placeholder="e.g. Summarize today's activity for {{date}}"
+                          value={schedPrompt}
+                          onChange={(e) => setSchedPrompt(e.target.value)}
+                          rows={3}
+                        />
+                      </label>
+                      <label className="field checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={schedOneTime}
+                          onChange={(e) => setSchedOneTime(e.target.checked)}
+                        />
+                        <span className="field-label">One-time (run once then disable)</span>
+                      </label>
+                      <label className="field checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={schedUseCron}
+                          onChange={(e) => setSchedUseCron(e.target.checked)}
+                        />
+                        <span className="field-label">Use cron expression (advanced)</span>
+                      </label>
+                      {schedUseCron ? (
+                        <label className="field">
+                          <span className="field-label">Cron expression</span>
+                          <span className="field-hint">e.g. 0 9 * * MON-FRI (weekdays at 9am UTC)</span>
+                          <input
+                            placeholder="0 9 * * *"
+                            value={schedCron}
+                            onChange={(e) => setSchedCron(e.target.value)}
+                          />
+                        </label>
+                      ) : (
+                        <div className="interval-picker">
+                          <span className="field-label">Every</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={schedIntervalValue}
+                            onChange={(e) => setSchedIntervalValue(e.target.value)}
+                          />
+                          <select
+                            value={schedIntervalUnit}
+                            onChange={(e) => setSchedIntervalUnit(e.target.value)}
+                          >
+                            <option value="hours">hours</option>
+                            <option value="days">days</option>
+                            <option value="weeks">weeks</option>
+                          </select>
+                        </div>
+                      )}
+                      <label className="field checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={schedEnabled}
+                          onChange={(e) => setSchedEnabled(e.target.checked)}
+                        />
+                        <span className="field-label">Enabled</span>
+                      </label>
+                      <div className="form-actions">
+                        <button onClick={saveSchedule}>
+                          {editingSchedule ? "Save" : "Create"}
+                        </button>
+                        <button type="button" onClick={resetScheduleForm}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

@@ -46,8 +46,31 @@ export interface SessionMeta {
   id: string;
   agent_id: string;
   title: string;
+  schedule_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Schedule {
+  id: string;
+  agent_id: string;
+  prompt: string;
+  enabled: boolean;
+  one_time: boolean;
+  interval_seconds: number | null;
+  cron_expression: string | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_session_id: string | null;
+  created_at: string;
+}
+
+export interface ScheduleCreate {
+  prompt: string;
+  enabled?: boolean;
+  one_time?: boolean;
+  interval_seconds?: number | null;
+  cron_expression?: string | null;
 }
 
 export interface Message {
@@ -89,7 +112,10 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
     credentials: "same-origin",
     ...opts,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `${res.status} ${res.statusText}`);
+  }
   if (res.status === 204) return undefined as T;
   return res.json();
 }
@@ -166,6 +192,28 @@ export const api = {
     delete: (realmId: string, id: string) =>
       request<void>(`/realms/${realmId}/sessions/${id}`, { method: "DELETE" }),
   },
+  schedules: {
+    list: (realmId: string, agentId: string) =>
+      request<Schedule[]>(`/realms/${realmId}/agents/${agentId}/schedules`),
+    create: (realmId: string, agentId: string, body: ScheduleCreate) =>
+      request<Schedule>(`/realms/${realmId}/agents/${agentId}/schedules`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    get: (realmId: string, id: string) =>
+      request<Schedule>(`/realms/${realmId}/schedules/${id}`),
+    update: (realmId: string, id: string, body: Partial<ScheduleCreate>) =>
+      request<Schedule>(`/realms/${realmId}/schedules/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    delete: (realmId: string, id: string) =>
+      request<void>(`/realms/${realmId}/schedules/${id}`, { method: "DELETE" }),
+    run: (realmId: string, id: string) =>
+      request<{ session_id: string | null }>(`/realms/${realmId}/schedules/${id}/run`, {
+        method: "POST",
+      }),
+  },
   chat: async function* (
     realmId: string,
     sessionId: string,
@@ -181,7 +229,10 @@ export const api = {
         body: JSON.stringify({ message, ui_prompt: uiPrompt }),
       }
     );
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `${res.status} ${res.statusText}`);
+  }
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = "";

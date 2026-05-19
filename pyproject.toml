@@ -10,6 +10,7 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "python-dotenv>=1.2.2",
     "uvicorn>=0.30.0",
+    "croniter>=6.0.0",
 ]
 
 [project.scripts]
@@ -26,4 +27,5 @@ packages = ["src/assist"]
 dev = [
     "mypy>=2.1.0",
     "ruff>=0.15.13",
+    "types-croniter>=6.2.2.20260518",
 ]

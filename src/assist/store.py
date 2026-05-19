@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import AgentDefinition, Message, SessionMeta
+from .models import AgentDefinition, Message, ScheduleDefinition, SessionMeta
 
 DEFAULT_SESSION_TTL_DAYS = 7
 
@@ -16,8 +16,10 @@ class Store:
         self.data_dir = Path(data_dir)
         self.agents_dir = self.data_dir / "agents"
         self.sessions_dir = self.data_dir / "sessions"
+        self.schedules_dir = self.data_dir / "schedules"
         self.agents_dir.mkdir(parents=True, exist_ok=True)
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        self.schedules_dir.mkdir(parents=True, exist_ok=True)
 
     # ── agents ──
 
@@ -162,3 +164,59 @@ class Store:
         meta_p.unlink()
         msg_p.unlink(missing_ok=True)
         return True
+
+    # ── schedules ──
+
+    def _schedule_path(self, schedule_id: str) -> Path:
+        return self.schedules_dir / f"{schedule_id}.json"
+
+    def list_schedules(self, agent_id: str | None = None) -> list[ScheduleDefinition]:
+        schedules = []
+        for p in sorted(self.schedules_dir.glob("*.json")):
+            sched = ScheduleDefinition.model_validate_json(p.read_text())
+            if agent_id and sched.agent_id != agent_id:
+                continue
+            schedules.append(sched)
+        return schedules
+
+    def get_schedule(self, schedule_id: str) -> ScheduleDefinition | None:
+        p = self._schedule_path(schedule_id)
+        if not p.exists():
+            return None
+        return ScheduleDefinition.model_validate_json(p.read_text())
+
+    def create_schedule(self, schedule: ScheduleDefinition) -> ScheduleDefinition:
+        self._schedule_path(schedule.id).write_text(
+            json.dumps(schedule.model_dump(mode="json"), indent=2)
+        )
+        return schedule
+
+    def update_schedule(
+        self, schedule_id: str, updates: dict
+    ) -> ScheduleDefinition | None:
+        sched = self.get_schedule(schedule_id)
+        if not sched:
+            return None
+        data = sched.model_dump()
+        data.update({k: v for k, v in updates.items() if v is not None})
+        updated = ScheduleDefinition.model_validate(data)
+        self._schedule_path(schedule_id).write_text(
+            json.dumps(updated.model_dump(mode="json"), indent=2)
+        )
+        return updated
+
+    def delete_schedule(self, schedule_id: str) -> bool:
+        p = self._schedule_path(schedule_id)
+        if not p.exists():
+            return False
+        p.unlink()
+        return True
+
+    def delete_schedules_for_agent(self, agent_id: str) -> int:
+        deleted = 0
+        for p in list(self.schedules_dir.glob("*.json")):
+            sched = ScheduleDefinition.model_validate_json(p.read_text())
+            if sched.agent_id == agent_id:
+                p.unlink()
+                deleted += 1
+        return deleted
